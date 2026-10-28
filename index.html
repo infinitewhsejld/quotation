@@ -60,6 +60,29 @@
       #action-buttons button { width: 100%; min-width: 0; justify-content: center; padding: 0.7rem 0.5rem; font-size: 0.8125rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     }
 
+    /* Date input: iOS Safari renders native date fields with a gray background,
+       centered text and an intrinsic width that overflows its grid cell.
+       Normalize it so it looks and sizes like the other text inputs. */
+    input[type="date"] {
+      -webkit-appearance: none;
+      appearance: none;
+      display: block;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+      background-color: #fff;
+      color: #0f172a;
+      text-align: left;
+      min-height: 2.5rem;
+      line-height: 1.25rem;
+    }
+    input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; min-height: 1.25rem; }
+    input[type="date"]::-webkit-datetime-edit { padding: 0; }
+    input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; }
+    /* Let grid children shrink so the date field can't push into its neighbour */
+    #tab-panel-new .grid > div { min-width: 0; }
+
     /* No pinch-zoom / double-tap zoom */
     html, body { touch-action: pan-x pan-y; }
 
@@ -113,6 +136,10 @@
         padding: 0.4rem 0 0.6rem !important;
       }
       .rtable td.cell-main { padding-top: 0.4rem !important; padding-right: 2.25rem !important; }
+      /* Quotation line items (mobile/tablet only): picture goes on top of the SKU code, and is larger */
+      #items-tbody tr { display: flex; flex-direction: column; }
+      #items-tbody td.cell-pic { order: -1; padding-top: 1.4rem !important; }
+      #items-tbody td.cell-pic > div { width: 150px !important; height: 150px !important; }
       .rtable td.cell-main::before { content: none; }
       .rtable td.cell-actions {
         position: absolute;
@@ -1437,7 +1464,7 @@
           </td>
           <td class="py-2 px-3 align-top text-center cell-pic" data-label="Picture">
             <div id="pic-cell-${item.id}" tabindex="0" onclick="this.focus()" title="Click here, then press Ctrl+V to paste an image" class="mx-auto flex items-center justify-center rounded border outline-none cursor-pointer transition ${item.picture ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 hover:border-brand-500 bg-slate-50'} focus:border-brand-500 focus:ring-2 focus:ring-brand-200" style="width:64px;height:64px;aspect-ratio:1/1;">
-              ${item.picture ? `<img src="${thumbUrl(item.picture, 192)}" loading="lazy" decoding="async" class="w-full h-full rounded" style="object-fit:contain;display:block;">` : `<span class="text-[8px] leading-tight text-slate-400 px-1">Click +<br>Ctrl+V</span>`}
+              ${item.picture ? `<img src="${thumbUrl(item.picture, 320)}" loading="lazy" decoding="async" class="w-full h-full rounded" style="object-fit:contain;display:block;">` : `<span class="text-[8px] leading-tight text-slate-400 px-1">Click +<br>Ctrl+V</span>`}
             </div>
           </td>
           <td class="py-2 px-3 align-top text-center" data-label="Qty">
