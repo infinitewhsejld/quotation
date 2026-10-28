@@ -1,0 +1,2957 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Quotation Tool - Google Sheets & Drive Integrated</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#ecfdf5', 100: '#d1fae5', 500: '#10b981',
+              600: '#059669', 700: '#047857', 800: '#065f46'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); }
+
+    /* Main navigation: tabs on desktop, collapsible hamburger menu on mobile & tablet */
+    #main-nav { display: flex; flex-wrap: wrap; gap: 4px; }
+    @media (max-width: 1023px) {
+      #main-nav { display: none; flex-direction: column; flex-wrap: nowrap; gap: 2px; width: 100%; order: 3; padding-top: 8px; margin-top: 2px; border-top: 1px solid #e2e8f0; }
+      #main-nav.open { display: flex; }
+      #main-nav .tab-btn { width: 100%; text-align: left; padding-top: 0.7rem; padding-bottom: 0.7rem; }
+    }
+    @media (min-width: 1024px) { #nav-toggle { display: none; } }
+
+    /* Account block inside the mobile menu (the header chip is used on desktop) */
+    #nav-user { display: none; }
+    @media (max-width: 1023px) {
+      #user-chip { display: none !important; }
+      #nav-user { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 6px; padding: 10px 4px 4px; border-top: 1px solid #e2e8f0; }
+    }
+
+    /* Quotation preview: fixed paper-width page (same layout as the PDF) scaled to fit the screen, zoomable */
+    #print-viewport { flex: 1 1 auto; min-height: 0; overflow: auto; background: #e2e8f0; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    #print-scaler { margin: 8px auto; box-shadow: 0 1px 6px rgba(15,23,42,.25); background: #fff; }
+    #print-area { width: 816px; box-sizing: border-box; padding: 38px; transform-origin: top left; }
+    @media screen and (max-width: 639px) {
+      #print-modal { padding: 0 !important; }
+      #print-modal > div { border-radius: 0 !important; height: 100vh; height: 100dvh; max-height: none !important; }
+    }
+
+    /* Mobile: action buttons in an even 2 x 2 grid */
+    @media (max-width: 639px) {
+      #action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 0 0.875rem 1rem; }
+      #action-buttons button { width: 100%; min-width: 0; justify-content: center; padding: 0.7rem 0.5rem; font-size: 0.8125rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    }
+
+    /* No pinch-zoom / double-tap zoom */
+    html, body { touch-action: pan-x pan-y; }
+
+    /* Mobile: edge-to-edge content, no card borders */
+    @media (max-width: 639px) {
+      main { padding-left: 0 !important; padding-right: 0 !important; padding-top: 0.75rem !important; }
+      main .bg-white.rounded-xl.border.shadow-xs { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; padding: 0.875rem !important; }
+    }
+    
+    /* Responsive tables: collapse into stacked cards on mobile & tablet
+       (below 1024px) so nothing needs horizontal scrolling. Full table
+       layout is kept for larger (desktop) screens. */
+    @media (max-width: 1023px) {
+      .rtable table, .rtable thead, .rtable tbody, .rtable tr, .rtable th, .rtable td { display: block; }
+      .rtable thead { display: none; }
+      .rtable td, .rtable th { width: 100% !important; }
+      .rtable tbody tr {
+        position: relative;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+        background: #fff;
+      }
+      .rtable tbody tr:last-child { margin-bottom: 0; }
+      .rtable td {
+        border: none !important;
+        padding: 0.3rem 0 !important;
+        text-align: left !important;
+      }
+      .rtable td[data-label]::before {
+        content: attr(data-label);
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        color: #94a3b8;
+      }
+      .rtable td[data-label]:not(.cell-main):not(.cell-pic):not(.cell-actions):not(.cell-block) {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .rtable td.cell-block::before { display: block; margin-bottom: 0.2rem; }
+      .rtable td.cell-pic {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.4rem 0 0.6rem !important;
+      }
+      .rtable td.cell-main { padding-top: 0.4rem !important; padding-right: 2.25rem !important; }
+      .rtable td.cell-main::before { content: none; }
+      .rtable td.cell-actions {
+        position: absolute;
+        top: 0.6rem;
+        right: 0.6rem;
+        padding: 0 !important;
+        width: auto !important;
+      }
+      .rtable td.cell-actions::before { content: none; }
+    }
+
+    @media print {
+      @page {
+        size: letter portrait;
+        margin: 10mm;
+      }
+      html, body {
+        background: white !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      body * { visibility: hidden; }
+      #print-modal, #print-modal * { visibility: visible; }
+      body > *:not(#print-modal) { display: none !important; }
+      #print-modal {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        background: white !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+      }
+      #print-modal > div {
+        max-width: 100% !important;
+        width: 100% !important;
+        max-height: none !important;
+        height: auto !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        overflow: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      #print-area {
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+      }
+      #print-viewport { overflow: visible !important; background: #fff !important; display: block !important; height: auto !important; max-height: none !important; }
+      #print-scaler { width: 100% !important; height: auto !important; margin: 0 !important; box-shadow: none !important; }
+      #print-area { transform: none !important; }
+      .no-print { display: none !important; }
+    }
+    .sku-row.active { background-color: #ecfdf5; }
+    .sku-row.active .sku-code { color: #047857; }
+
+    /* ===== Custom dialogs & toasts (replace native alert/confirm/prompt) ===== */
+    #ui-dialog-root { position: fixed; inset: 0; z-index: 1000; display: none; align-items: center; justify-content: center; padding: 1rem; background: rgba(15,23,42,.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+    #ui-dialog-root.open { display: flex; animation: ui-fade .15s ease-out; }
+    .ui-card { width: 100%; max-width: 24rem; background: #fff; border-radius: 1rem; padding: 1.4rem 1.4rem 1.1rem; box-shadow: 0 24px 48px -12px rgba(15,23,42,.35), 0 0 0 1px rgba(15,23,42,.06); animation: ui-pop .18s cubic-bezier(.2,.9,.3,1.2); }
+    .ui-head { display: flex; gap: .85rem; align-items: flex-start; }
+    .ui-icon { flex: none; width: 2.5rem; height: 2.5rem; border-radius: 9999px; display: grid; place-items: center; }
+    .ui-icon svg { width: 1.25rem; height: 1.25rem; }
+    .ui-title { font-size: 1rem; font-weight: 600; color: #0f172a; line-height: 1.35; margin-top: .1rem; }
+    .ui-msg { margin-top: .3rem; font-size: .875rem; line-height: 1.5; color: #475569; white-space: pre-line; }
+    .ui-input { margin-top: .9rem; width: 100%; border: 1px solid #cbd5e1; border-radius: .6rem; padding: .55rem .75rem; font-size: .875rem; outline: none; transition: border-color .15s, box-shadow .15s; }
+    .ui-input:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
+    .ui-actions { margin-top: 1.25rem; display: flex; justify-content: flex-end; gap: .5rem; }
+    .ui-btn { padding: .5rem 1rem; border-radius: .6rem; font-size: .875rem; font-weight: 500; transition: background .15s, box-shadow .15s; cursor: pointer; }
+    .ui-btn:focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+    .ui-btn-ghost { color: #334155; border: 1px solid #cbd5e1; background: #fff; }
+    .ui-btn-ghost:hover { background: #f1f5f9; }
+    .ui-btn-ok { color: #fff; background: #059669; }
+    .ui-btn-ok:hover { background: #047857; }
+    .ui-tone-danger .ui-btn-ok { background: #dc2626; } .ui-tone-danger .ui-btn-ok:hover { background: #b91c1c; }
+    .ui-tone-warning .ui-btn-ok { background: #d97706; } .ui-tone-warning .ui-btn-ok:hover { background: #b45309; }
+    .ui-tone-brand .ui-icon { background: #d1fae5; color: #047857; }
+    .ui-tone-danger .ui-icon { background: #fee2e2; color: #b91c1c; }
+    .ui-tone-warning .ui-icon { background: #fef3c7; color: #b45309; }
+    #ui-toasts { position: fixed; top: 1rem; right: 1rem; z-index: 1100; display: flex; flex-direction: column; gap: .6rem; width: min(22rem, calc(100vw - 2rem)); pointer-events: none; }
+    .ui-toast { pointer-events: auto; position: relative; overflow: hidden; display: flex; gap: .65rem; align-items: flex-start; background: #fff; border-radius: .8rem; padding: .8rem .9rem .8rem 1rem; box-shadow: 0 10px 28px -8px rgba(15,23,42,.3), 0 0 0 1px rgba(15,23,42,.06); animation: ui-slide .22s cubic-bezier(.2,.9,.3,1); }
+    .ui-toast::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--tc); }
+    .ui-toast .ui-ticon { flex: none; width: 1.25rem; height: 1.25rem; color: var(--tc); margin-top: 1px; }
+    .ui-toast .ui-ttext { flex: 1; min-width: 0; font-size: .85rem; line-height: 1.4; color: #1e293b; }
+    .ui-toast .ui-ttitle { font-weight: 600; color: #0f172a; }
+    .ui-toast .ui-tclose { flex: none; color: #94a3b8; font-size: 1.1rem; line-height: 1; padding: 0 .15rem; cursor: pointer; }
+    .ui-toast .ui-tclose:hover { color: #475569; }
+    .ui-toast .ui-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--tc); opacity: .35; transform-origin: left; animation: ui-bar var(--dur) linear forwards; }
+    .ui-toast.out { animation: ui-out .18s ease-in forwards; }
+    .ui-toast.success { --tc: #059669; } .ui-toast.error { --tc: #dc2626; } .ui-toast.warning { --tc: #d97706; } .ui-toast.info { --tc: #475569; }
+    @keyframes ui-fade { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes ui-pop { from { opacity: 0; transform: translateY(8px) scale(.96) } to { opacity: 1; transform: none } }
+    @keyframes ui-slide { from { opacity: 0; transform: translateX(16px) } to { opacity: 1; transform: none } }
+    @keyframes ui-out { to { opacity: 0; transform: translateX(16px) } }
+    @keyframes ui-bar { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+    @media (max-width: 640px) { #ui-toasts { top: auto; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); right: 50%; transform: translateX(50%); } }
+    @media (prefers-reduced-motion: reduce) { .ui-card, .ui-toast, #ui-dialog-root.open { animation: none; } .ui-toast .ui-bar { animation: none; display: none; } }
+    @media print { #ui-dialog-root, #ui-toasts { display: none !important; } }
+  </style>
+</head>
+<body class="h-full text-slate-800 flex flex-col min-h-screen">
+
+  <!-- LOGIN OVERLAY -->
+  <div id="login-overlay" class="fixed inset-0 z-[100] bg-slate-100 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-lg w-full max-w-sm p-6 space-y-4">
+      <div class="text-center">
+        <h1 class="text-lg font-bold text-slate-900">Quotation Tool</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Mag-log in para magpatuloy</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Username</label>
+        <input type="text" id="login-user" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Password</label>
+        <input type="password" id="login-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+      </div>
+      <p id="login-error" class="hidden text-xs font-semibold text-red-600"></p>
+      <button id="login-btn" onclick="doLogin()" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition">Log In</button>
+    </div>
+  </div>
+
+  <!-- Top Sync Banner -->
+  <div id="sync-banner" class="bg-amber-500 text-white text-xs font-medium px-4 py-2 flex items-center justify-between shadow-sm transition-all">
+    <div class="flex items-center gap-2">
+      <span class="relative flex h-2 w-2">
+        <span id="sync-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-200 opacity-75"></span>
+        <span id="sync-dot" class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+      </span>
+      <span id="sync-status-text">Connecting to Google Sheet & Drive…</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <button onclick="forceCloudSync()" id="btn-sync-now" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded text-xs transition flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Sync Now
+      </button>
+    </div>
+  </div>
+
+  <!-- Header & Nav -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-brand-500 text-white rounded-xl shadow-sm">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 tracking-tight">Quotation Tool</h1>
+          <p class="text-xs text-slate-500 hidden sm:block">Google Sheets Database & Google Drive Storage</p>
+        </div>
+      </div>
+
+      <!-- Tabs Navigation -->
+      <nav id="main-nav" class="lg:order-2">
+        <button onclick="switchTab('new')" id="tab-btn-new" class="tab-btn active px-3.5 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap text-brand-700 bg-brand-50">
+          New Quotation
+        </button>
+        <button onclick="switchTab('saved')" id="tab-btn-saved" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+          Saved Quotations <span id="badge-saved-count" class="ml-1 px-1.5 py-0.5 text-xs bg-slate-200 text-slate-700 rounded-full">0</span>
+        </button>
+        <button onclick="switchTab('sku')" id="tab-btn-sku" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+          SKU Catalog <span id="badge-sku-count" class="ml-1 px-1.5 py-0.5 text-xs bg-slate-200 text-slate-700 rounded-full">0</span>
+        </button>
+        <button onclick="switchTab('settings')" id="tab-btn-settings" class="tab-btn px-3.5 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+          Settings
+        </button>
+        <div id="nav-user">
+          <span id="nav-user-name" class="min-w-0 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-semibold truncate"></span>
+          <button onclick="doLogout()" class="shrink-0 px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-medium transition">Log Out</button>
+        </div>
+      </nav>
+      <div class="flex items-center gap-2 ml-auto lg:ml-0 order-2 lg:order-3 min-w-0">
+      <div id="user-chip" class="hidden flex items-center gap-2 text-xs min-w-0 max-w-full">
+        <span id="user-chip-name" class="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full font-semibold truncate max-w-[200px] sm:max-w-[260px]"></span>
+        <button onclick="doLogout()" class="shrink-0 px-2.5 py-1 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg font-medium transition">Log Out</button>
+      </div>
+      <button id="nav-toggle" type="button" onclick="toggleMobileMenu()" aria-label="Open menu" aria-expanded="false" aria-controls="main-nav" class="shrink-0 p-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition">
+        <svg id="nav-icon-open" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg id="nav-icon-close" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full">
+
+    <!-- TAB 1: NEW QUOTATION -->
+    <section id="tab-panel-new" class="tab-panel space-y-6">
+      
+      <!-- Customer Info Card -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            Quotation & Customer Details
+          </h2>
+          <div class="flex flex-col items-end gap-1">
+            <div class="flex items-center gap-2">
+              <label for="q-no-display" class="text-xs font-semibold text-slate-500">Quotation No.</label>
+              <input type="text" id="q-no-display" value="QT-2026-001" placeholder="e.g. QT-2026-001" oninput="validateQNoLive()" class="w-40 px-2 py-1 text-xs font-mono font-semibold text-brand-700 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-brand-500">
+            </div>
+            <p id="q-no-warning" class="hidden text-[11px] font-semibold text-red-600"></p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Prepared By / Branch</label>
+            <select id="q-profile" onchange="onQuotationProfileChange()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+              <option value="">— Use Default Company Info —</option>
+            </select>
+            <div class="flex items-center justify-between gap-2 mt-1">
+              <p id="q-profile-hint" class="text-[11px] text-slate-400"></p>
+              <button type="button" id="q-profile-change" onclick="unlockProfileChange()" class="hidden shrink-0 text-[11px] font-semibold text-brand-700 hover:underline">Change Prepared By</button>
+            </div>
+          </div>
+          <details id="my-terms-box" class="hidden md:col-span-2 border border-slate-200 rounded-lg bg-slate-50/60">
+            <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-slate-600">My Terms &amp; Conditions (saved sa account mo)</summary>
+            <div class="px-3 pb-3 space-y-2">
+              <textarea id="my-terms-text" rows="5" class="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500" placeholder="Isang term kada linya"></textarea>
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-[11px] text-slate-400">Ito ang lalabas sa lahat ng print mo.</p>
+                <button type="button" onclick="saveMyTerms()" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-medium transition">Save My Terms</button>
+              </div>
+            </div>
+          </details>
+          <div class="md:col-span-2">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Quotation Password <span class="font-normal text-slate-400">(optional — ikaw lang ang makakapag-view/edit/print)</span></label>
+            <input type="password" id="q-password" autocomplete="new-password" placeholder="Iwanang blangko kung walang password" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Customer / Company Name <span class="text-red-500">*</span></label>
+            <input type="text" id="q-customer" placeholder="e.g. Acme Corporation or Sir Ivan" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Project Description</label>
+            <input type="text" id="q-project" placeholder="e.g. Office Lighting Renovation" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Address / Attention</label>
+            <input type="text" id="q-address" placeholder="e.g. 4/F Uptown Bldg, Taguig / Attn: John Doe" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Quotation Date</label>
+              <input type="date" id="q-date" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Valid Period</label>
+              <input type="text" id="q-valid" value="7 DAYS" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item Picker & Quotation Table Card -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"/></svg>
+            Quotation Line Items
+          </h2>
+          <button onclick="addCustomRow()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 self-start sm:self-auto">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Custom Blank Item
+          </button>
+        </div>
+
+        <!-- SKU Search Input with Live Dropdown -->
+        <div class="relative">
+          <div class="relative">
+            <input type="text" id="sku-search-input" oninput="filterSkuSearch()" onkeydown="onSkuSearchKeydown(event)" onfocus="filterSkuSearch()" placeholder="Search SKU code or spec from catalog..." class="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+            <svg class="w-5 h-5 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
+          <!-- Dropdown Results -->
+          <div id="sku-search-results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto z-40 divide-y divide-slate-100"></div>
+        </div>
+
+        <!-- Line Items Table -->
+        <div class="overflow-x-auto rtable">
+          <table class="w-full text-left text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-y border-slate-200 text-slate-600 font-semibold text-xs">
+                <th class="py-2.5 px-3">Item / SKU Code & Description</th>
+                <th class="py-2.5 px-3 w-16 text-center">Pic</th>
+                <th class="py-2.5 px-3 w-20 text-center">Qty</th>
+                <th class="py-2.5 px-3 w-28 text-right">SRP (<span class="currency-symbol">₱</span>)</th>
+                <th class="py-2.5 px-3 w-20 text-center">Disc %</th>
+                <th class="py-2.5 px-3 w-28 text-right">Unit Price</th>
+                <th class="py-2.5 px-3 w-28 text-right">Total (<span class="currency-symbol">₱</span>)</th>
+                <th class="py-2.5 px-2 w-10 text-center"></th>
+              </tr>
+            </thead>
+            <tbody id="items-tbody" class="divide-y divide-slate-200">
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+          <div id="items-empty-state" class="py-8 text-center text-slate-400 text-sm">
+            No items added yet. Search your catalog above or click "Add Custom Blank Item".
+          </div>
+        </div>
+
+        <!-- Totals & Summary Block -->
+        <div class="border-t border-slate-200 pt-4 flex flex-col sm:flex-row justify-between items-start gap-4">
+          <div class="text-xs text-slate-500 space-y-1">
+            <p>• Prices include standard packaging unless specified otherwise.</p>
+            <p>• Dispatched items will be saved directly to your database.</p>
+          </div>
+          <div class="w-full sm:w-96 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <div class="flex justify-between text-xs text-slate-600">
+              <span>Subtotal:</span>
+              <span id="summary-subtotal" class="font-medium">₱0.00</span>
+            </div>
+            <div class="flex justify-between text-xs text-slate-600">
+              <span>Total Discount:</span>
+              <span id="summary-discount" class="font-medium text-emerald-600">-₱0.00</span>
+            </div>
+            <!-- Additional deductions (store credit, extra discount, etc.) -->
+            <div id="deductions-list" class="space-y-2"></div>
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+              <span class="text-[11px] text-slate-500">Add deduction:</span>
+              <button type="button" onclick="addDeduction('Store Credit')" class="px-2 py-0.5 text-[11px] font-medium border border-slate-300 text-slate-600 hover:bg-white hover:border-brand-500 rounded-full transition">+ Store Credit</button>
+              <button type="button" onclick="addDeduction('Additional Discount')" class="px-2 py-0.5 text-[11px] font-medium border border-slate-300 text-slate-600 hover:bg-white hover:border-brand-500 rounded-full transition">+ Additional Discount</button>
+              <button type="button" onclick="addDeduction('')" class="px-2 py-0.5 text-[11px] font-medium border border-slate-300 text-slate-600 hover:bg-white hover:border-brand-500 rounded-full transition">+ Other</button>
+            </div>
+            <!-- BIR Form 2307 (creditable withholding tax) -->
+            <div class="pt-2 border-t border-dashed border-slate-200">
+              <label class="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+                <input type="checkbox" id="wht-enabled" onchange="onWhtChange()" class="rounded border-slate-300">
+                Buyer will issue BIR Form 2307 (withholding tax)
+              </label>
+              <div id="wht-options" class="hidden flex flex-wrap items-center gap-1.5 mt-1.5">
+                <span class="text-[11px] text-slate-500">Rate:</span>
+                <input type="number" id="wht-rate" list="wht-rates" min="0" max="100" step="any" value="1" oninput="onWhtChange()"
+                  class="w-16 px-2 py-1 text-xs text-right border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none">
+                <span class="text-[11px] text-slate-500">%</span>
+                <datalist id="wht-rates"><option value="1"><option value="2"><option value="5"><option value="10"><option value="15"></datalist>
+                <select id="wht-basis" onchange="onWhtChange()" class="px-1.5 py-1 text-xs border border-slate-300 rounded bg-white outline-none">
+                  <option value="vatex">On VAT-exclusive amount (÷ 1.12)</option>
+                  <option value="total">On total amount</option>
+                </select>
+              </div>
+            </div>
+            <div class="flex justify-between text-base font-bold text-slate-900 border-t border-slate-200 pt-2">
+              <span>Grand Total:</span>
+              <span id="summary-grandtotal" class="text-brand-700">₱0.00</span>
+            </div>
+            <div id="wht-summary" class="hidden space-y-1 border-t border-slate-200 pt-2">
+              <div class="flex justify-between text-xs text-slate-600">
+                <span id="wht-label">Less: Withholding Tax (2307):</span>
+                <span id="summary-wht" class="font-medium text-emerald-600">-₱0.00</span>
+              </div>
+              <div class="flex justify-between text-sm font-bold text-slate-900">
+                <span>Net Amount Payable:</span>
+                <span id="summary-netpayable" class="text-brand-700">₱0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div id="action-buttons" class="flex flex-wrap items-center justify-end gap-3">
+        <button onclick="clearCurrentQuotation()" class="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition">
+          Clear Form
+        </button>
+        <button onclick="previewQuotation()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          Preview Quotation
+        </button>
+        <button id="btn-save-quotation" onclick="saveQuotation(false)" class="px-4 py-2 border border-brand-600 text-brand-700 hover:bg-brand-50 rounded-lg text-sm font-medium transition flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+          <span class="btn-label">Save Quotation</span>
+        </button>
+        <button id="btn-save-export" onclick="saveQuotation(true)" class="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium shadow-sm transition flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+          <span class="btn-label">Save & Export PDF</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- TAB 2: SAVED QUOTATIONS -->
+    <section id="tab-panel-saved" class="tab-panel hidden space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <h2 class="text-base font-semibold text-slate-900">Saved Quotations History</h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <select id="saved-sort" onchange="onSavedSortChange()" title="Sort quotations" class="px-2 py-1.5 text-sm border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="date-desc" selected>Date: Newest to Oldest</option>
+              <option value="date-asc">Date: Oldest to Newest</option>
+              <option value="amount-desc">Amount: Highest to Lowest</option>
+              <option value="amount-asc">Amount: Lowest to Highest</option>
+              <option value="name-asc">Customer: A to Z</option>
+              <option value="name-desc">Customer: Z to A</option>
+              <option value="qno-asc">Quotation No.: A to Z</option>
+              <option value="qno-desc">Quotation No.: Z to A</option>
+            </select>
+            <input type="text" id="saved-search-input" oninput="onSavedSearchInput()" placeholder="Search customer, project..." class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+        </div>
+
+        <div id="saved-list-container" class="space-y-3">
+          <!-- List rendered by JavaScript -->
+        </div>
+
+        <!-- Pagination Controls -->
+        <div id="saved-pagination" style="display:none;" class="flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-4 border-t border-slate-100">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span id="saved-page-info">Showing 1–10 of 0</span>
+            <select id="saved-page-size" onchange="onSavedPageSizeChange()" class="ml-2 px-2 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="10" selected>10 / page</option>
+              <option value="25">25 / page</option>
+              <option value="50">50 / page</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="goToSavedPage(1)" class="px-2 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition" title="First Page">«</button>
+            <button onclick="goToSavedPage(savedPage - 1)" class="px-2.5 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition">Prev</button>
+            <span id="saved-page-current" class="px-3 py-1 text-xs font-semibold text-slate-700">Page 1</span>
+            <button onclick="goToSavedPage(savedPage + 1)" class="px-2.5 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition">Next</button>
+            <button onclick="goToSavedPage(savedTotalPages)" class="px-2 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition" title="Last Page">»</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: SKU DATABASE -->
+    <section id="tab-panel-sku" class="tab-panel hidden space-y-6">
+      
+      <!-- Add / Edit SKU Form -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+            <span id="sku-form-title">Add New SKU to Database</span>
+          </h2>
+          <button id="sku-cancel-edit-btn" onclick="cancelSkuEdit()" class="hidden text-xs text-red-600 hover:underline font-semibold">
+            Cancel Editing
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">SKU Code / ID <span class="text-red-500">*</span></label>
+            <input type="text" id="s-sku" placeholder="e.g. ID-RL-NEON[CW]" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Standard SRP (<span class="currency-symbol">₱</span>)</label>
+            <input type="number" step="0.01" id="s-srp" placeholder="0.00" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Specifications & Description</label>
+            <textarea id="s-spec" rows="3" placeholder="Power: 10w/meter LED&#10;Color: Coolwhite CCT:4000k&#10;Size: L1000*W10*H15mm" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none resize-none"></textarea>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">SKU Picture (Upload or Paste Screenshot)</label>
+            <!-- Paste Zone -->
+            <div id="s-paste-zone" tabindex="0" class="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-lg p-3 text-center cursor-pointer transition focus:bg-brand-50 focus:border-brand-500 outline-none">
+              <p class="text-xs text-slate-600 font-medium">Click here & press <kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-slate-700 font-mono text-[10px]">Ctrl + V</kbd> to paste screenshot</p>
+              <p class="text-[11px] text-slate-400 mt-1">or browse file below</p>
+            </div>
+            <input type="file" id="s-picture-file" accept="image/*" onchange="handleSkuPictureFile(this)" class="mt-2 text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100">
+            
+            <div id="s-picture-preview-wrap" class="hidden flex items-center gap-3 mt-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
+              <img id="s-picture-preview" class="w-12 h-12 object-cover rounded-md border border-slate-300" src="" alt="SKU Preview">
+              <span id="s-picture-status" class="text-xs text-slate-500 flex-1">Image ready</span>
+              <button onclick="clearSkuPicture()" class="text-xs text-red-600 hover:underline">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <input type="hidden" id="s-edit-id">
+        <input type="hidden" id="s-picture-data">
+
+        <div class="flex justify-end gap-2 border-t border-slate-100 pt-3">
+          <button id="btn-save-sku" onclick="saveSkuToCatalog()" class="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium shadow-sm transition flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <span class="btn-label">Save SKU</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Catalog Table -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h2 class="text-base font-semibold text-slate-900">SKU Catalog Database</h2>
+          <input type="text" id="catalog-search" oninput="onCatalogSearchInput()" placeholder="Search catalog..." class="px-3 py-1.5 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+        </div>
+
+        <div class="overflow-x-auto rtable">
+          <table class="w-full text-left text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-y border-slate-200 text-slate-600 font-semibold text-xs">
+                <th class="py-2.5 px-3 w-16">Picture</th>
+                <th class="py-2.5 px-3">SKU Code</th>
+                <th class="py-2.5 px-3">Specifications</th>
+                <th class="py-2.5 px-3 w-28 text-right">SRP (<span class="currency-symbol">₱</span>)</th>
+                <th class="py-2.5 px-3 w-24 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sku-catalog-tbody" class="divide-y divide-slate-200">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+          <div id="catalog-empty" class="py-8 text-center text-slate-400 text-sm">
+            No SKUs found in catalog. Add your first item using the form above.
+          </div>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div id="catalog-pagination" style="display:none;" class="flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span id="catalog-page-info">Showing 1–50 of 0</span>
+            <select id="catalog-page-size" onchange="onCatalogPageSizeChange()" class="ml-2 px-2 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="25">25 / page</option>
+              <option value="50" selected>50 / page</option>
+              <option value="100">100 / page</option>
+              <option value="200">200 / page</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="goToCatalogPage(1)" class="px-2 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition" title="First Page">«</button>
+            <button onclick="goToCatalogPage(catalogPage - 1)" class="px-2.5 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition">Prev</button>
+            <span id="catalog-page-current" class="px-3 py-1 text-xs font-semibold text-slate-700">Page 1</span>
+            <button onclick="goToCatalogPage(catalogPage + 1)" class="px-2.5 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition">Next</button>
+            <button onclick="goToCatalogPage(catalogTotalPages)" class="px-2 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition" title="Last Page">»</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: SETTINGS -->
+    <section id="tab-panel-settings" class="tab-panel hidden space-y-6">
+      
+      <!-- Company Branding -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <h2 class="text-base font-semibold text-slate-900 border-b border-slate-100 pb-3">Company Information & Branding</h2>
+        
+        <!-- Logo Uploader -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Company Logo (Used in Quotation PDF Header)</label>
+          <div id="logo-paste-zone" tabindex="0" class="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-lg p-3 text-center cursor-pointer transition focus:bg-brand-50 focus:border-brand-500 outline-none">
+            <p class="text-xs text-slate-600 font-medium">Click here & press <kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-slate-700 font-mono text-[10px]">Ctrl + V</kbd> to paste company logo</p>
+          </div>
+          <input type="file" id="set-logo-file" accept="image/*" onchange="handleLogoFile(this)" class="mt-2 text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100">
+          
+          <div id="logo-preview-wrap" class="hidden flex items-center gap-3 mt-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
+            <img id="set-logo-preview" class="h-10 max-w-[160px] object-contain" src="" alt="Company Logo">
+            <button onclick="clearCompanyLogo()" class="text-xs text-red-600 hover:underline">Remove Logo</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Company Name</label>
+            <input type="text" id="set-company" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Website</label>
+            <input type="text" id="set-website" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Email Address</label>
+            <input type="email" id="set-email" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Company Address</label>
+            <input type="text" id="set-address" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Prepared By (Default Salesperson)</label>
+            <input type="text" id="set-preparedby" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Admin Password <span class="font-normal text-slate-400">(username: admin)</span></label>
+            <input type="text" id="set-adminpass" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Phone / Mobile</label>
+            <input type="text" id="set-phone" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Currency Symbol</label>
+            <input type="text" id="set-currency" value="₱" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Bank Payment Details</label>
+          <textarea id="set-bank" rows="4" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 font-mono text-xs"></textarea>
+          <p class="text-[11px] text-slate-400 mt-1">Separate bank accounts with blank lines.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Terms & Conditions</label>
+          <textarea id="set-terms" rows="4" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-xs"></textarea>
+          <p class="text-[11px] text-slate-400 mt-1">One term per line.</p>
+        </div>
+
+        <div class="flex justify-end border-t border-slate-100 pt-3">
+          <button onclick="saveAppSettings()" class="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition">Save Settings</button>
+        </div>
+      </div>
+
+      <!-- Salesperson / Branch Profiles -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-base font-semibold text-slate-900">Salesperson / Branch Profiles</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Add one profile per branch or salesperson. Pick which one applies per quotation in the "New Quotation" tab.</p>
+          </div>
+          <button onclick="addProfileRow()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 shrink-0">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Profile
+          </button>
+        </div>
+
+        <div id="profiles-list" class="space-y-3">
+          <!-- Rendered dynamically -->
+        </div>
+
+        <div class="flex justify-end border-t border-slate-100 pt-3">
+          <button onclick="saveAppSettings()" class="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium transition">Save Settings</button>
+        </div>
+      </div>
+    </section>
+
+    
+
+  </main>
+
+  <!-- PRINT / PREVIEW MODAL -->
+  <div id="print-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full my-auto overflow-hidden flex flex-col max-h-[92vh]">
+      
+      <!-- Modal Header (Hidden during print) -->
+      <div class="no-print bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800">
+        <span class="text-xs font-semibold tracking-wide uppercase text-slate-300">Quotation Preview & PDF Export</span>
+        <div class="flex items-center gap-2">
+          <button onclick="window.print()" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium rounded-lg transition flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            Print / Save as PDF
+          </button>
+          <button onclick="closePreviewModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+        </div>
+      </div>
+
+      <!-- Zoom toolbar (hidden during print) -->
+      <div class="no-print bg-slate-800 text-white px-3 py-1.5 flex items-center justify-center gap-2 text-xs">
+        <button type="button" onclick="zoomPreview(1 / 1.25)" class="w-8 h-7 rounded-md bg-slate-700 hover:bg-slate-600 text-base font-bold leading-none" aria-label="Zoom out">−</button>
+        <button type="button" id="zoom-label" onclick="fitPreview()" class="min-w-[3.5rem] h-7 px-2 rounded-md bg-slate-700 hover:bg-slate-600 font-semibold" title="Fit to width">Fit</button>
+        <button type="button" onclick="zoomPreview(1.25)" class="w-8 h-7 rounded-md bg-slate-700 hover:bg-slate-600 text-base font-bold leading-none" aria-label="Zoom in">+</button>
+      </div>
+
+      <!-- Printable Area (paper-width page, scaled to fit the screen) -->
+      <div id="print-viewport">
+        <div id="print-scaler">
+          <div id="print-area" class="font-sans text-slate-900 text-xs leading-normal bg-white">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  
+
+  const SAMPLE_SKUS = [
+    {id:'sku_neon', sku:'ID-RL-NEON[CW]', name:'Neon Flex LED Light', spec:'Power: 10w/meter LED light Color: Coolwhite\nCCT:4000k Size: L1000*W10*H15mm Material: Silicon', srp:350, picture:''},
+    {id:'sku_adap', sku:'ID-SS-NEONADAP', name:'Neon Power Adapter', spec:'Output: 12V DC, 5A Waterproof IP67', srp:300, picture:''},
+    {id:'sku_clip', sku:'ID-SS-NEONCLIP', name:'Neon Mounting Clip', spec:'Stainless Steel Clip', srp:30, picture:''},
+    {id:'sku_cap',  sku:'ID-SS-NEONECAP', name:'Neon End Cap', spec:'Silicon Sealer End Cap', srp:60, picture:''}
+  ];
+
+  const SAMPLE_QUOTATION = {
+    id:'q_sample',
+    qNo:'QT-2026-001',
+    customer:'RCW Trading',
+    project:'BGC Showroom Fitout',
+    address:'Sir Ivan / Taguig City',
+    valid:'7 DAYS',
+    date: new Date().toISOString().slice(0,10),
+    items:[
+      {id:'i1', skuId:'sku_neon', sku:'ID-RL-NEON[CW]', name:'Neon Flex LED Light', spec:SAMPLE_SKUS[0].spec, qty:3, srp:350, disc:10, picture:''},
+      {id:'i2', skuId:'sku_adap', sku:'ID-SS-NEONADAP', name:'Neon Power Adapter', spec:SAMPLE_SKUS[1].spec, qty:1, srp:300, disc:0, picture:''},
+      {id:'i3', skuId:'sku_clip', sku:'ID-SS-NEONCLIP', name:'Neon Mounting Clip', spec:SAMPLE_SKUS[2].spec, qty:9, srp:30, disc:0, picture:''},
+      {id:'i4', skuId:'sku_cap',  sku:'ID-SS-NEONECAP', name:'Neon End Cap', spec:SAMPLE_SKUS[3].spec, qty:1, srp:60, disc:0, picture:''}
+    ],
+    total: 1575,
+    createdAt: Date.now()
+  };
+
+  // Application Data State
+  let skus = [];
+  let quotations = [];
+  let profiles = []; // Salesperson / Branch profiles: {id, label, preparedby, address, email, phone}
+  let settings = {
+    company: 'Infinite Lighting & Style Center Inc',
+    website: 'www.infinitelighting.ph',
+    email: 'infinitelightingatmcfort@gmail.com',
+    address: '4/F The Uptown Palazzo, 9th Ave. Cor. 36th St. BGC, Taguig City',
+    preparedby: 'Donnie / Sales Executive',
+    phone: 'Landline: 84700527 / Mobile: 0913170545',
+    currency: '₱',
+    logo: '',
+    bank: `BDO UNIBANK ROCES AVE.\nAccount No. 012-10800-2762\nInfinite Lighting N Style Center Inc\n\nMETROBANK MOTHER IGNACIA - TIMOG\nAccount No. 225-7225514182\nInfinite Lighting N Style Center Inc`,
+    terms: `1. Prices are valid for 7 days from the date of quotation.\n2. 50% Downpayment required upon confirmation, 50% balance before delivery.\n3. Goods remain company property until paid in full.\n4. Standard 1-Year Warranty on LED drivers and modules.`
+  };
+
+  // Built-in Google Apps Script Web App URL — auto-connects on page load
+  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw5Kg36vHpMr_kU4iWjCNTBlrtWSDFCQk2wtTyt7jIZvvZt617oStkr6YtVf5tOaHfRSQ/exec';
+
+  let gsheetConfig = {
+    scriptUrl: DEFAULT_SCRIPT_URL,
+    driveFolderId: ''
+  };
+
+  let currentQuotationItems = [];
+  let currentDeductions = []; // extra deductions: store credit, additional discount, etc.
+  let currentWht = { enabled: false, rate: 1, vatExclusive: true }; // BIR Form 2307 creditable withholding tax
+  let isCloudConnected = false;
+
+  function loadLocal(key, fallback) {
+    try {
+      const val = localStorage.getItem(key);
+      return val ? JSON.parse(val) : fallback;
+    } catch(e) { return fallback; }
+  }
+
+  function saveLocal(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){}
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    // Load Local Data
+    skus = loadLocal('qt_skus', SAMPLE_SKUS);
+    quotations = loadLocal('qt_quotations', [SAMPLE_QUOTATION]);
+    const storedSettings = loadLocal('qt_settings', null);
+    if (storedSettings) settings = { ...settings, ...storedSettings };
+
+    const storedGsheet = loadLocal('qt_gsheet_config', null);
+    if (storedGsheet) gsheetConfig = { ...gsheetConfig, ...storedGsheet };
+    gsheetConfig.scriptUrl = DEFAULT_SCRIPT_URL;
+
+    // Load Salesperson/Branch Profiles. If none exist yet but old-style
+    // single settings (preparedby/address/email/phone) are present, migrate
+    // them into a first "Default" profile so no data is lost.
+    profiles = loadLocal('qt_profiles', []);
+    if (profiles.length === 0 && (settings.preparedby || settings.address || settings.email || settings.phone)) {
+      profiles.push({
+        id: 'default',
+        label: 'Default',
+        preparedby: settings.preparedby || '',
+        address: settings.address || '',
+        email: settings.email || '',
+        phone: settings.phone || ''
+      });
+      saveLocal('qt_profiles', profiles);
+    }
+    renderProfilesList();
+    renderProfileDropdown();
+
+    // Set Default Quotation Date
+    document.getElementById('q-date').value = new Date().toISOString().slice(0,10);
+    document.getElementById('q-no-display').value = generateNextQNo();
+
+    // Setup Paste Listeners for SKU picture and Logo
+    setupPasteListener('s-paste-zone', (base64) => setSkuPicturePreview(base64));
+    setupPasteListener('logo-paste-zone', (base64) => setCompanyLogoPreview(base64));
+
+    // Fill Settings UI
+    fillSettingsForm();
+    initAuth();
+
+    // Check Cloud Connection if Script URL exists
+    if (gsheetConfig.scriptUrl) {
+      updateSyncBannerStatus(false, 'Connecting to Google Sheet & Drive…');
+      testGoogleConnection(true);
+    } else {
+      updateSyncBannerStatus(false, 'Local Storage Mode — Connect Google Sheets in Settings');
+    }
+
+    // Initial Renders
+    renderSkuCatalog();
+    renderSavedQuotations();
+    updateBadges();
+    updateCurrencyDisplay();
+  });
+
+  async function callGoogleApi(action, payload = {}, method = 'GET') {
+    if (!gsheetConfig.scriptUrl) return null;
+
+    // Apps Script sometimes returns a 404/HTML page while it is "waking up".
+    // Retry automatically. Image uploads are NOT retried (would create duplicate Drive files).
+    const maxAttempts = (action === 'uploadImage') ? 1 : 4;
+    let lastErr;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        let res;
+        if (method === 'GET') {
+          res = await fetch(`${gsheetConfig.scriptUrl}?action=${action}&t=${Date.now()}`);
+        } else {
+          res = await fetch(gsheetConfig.scriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action, ...payload })
+          });
+        }
+        const text = await res.text();
+        return JSON.parse(text); // throws if Google returned an HTML error page
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Google API attempt ${attempt}/${maxAttempts} failed:`, err.toString());
+        if (attempt < maxAttempts) {
+          if (method === 'GET') {
+            updateSyncBannerStatus(false, `Waking up Google Sheet… retry ${attempt}/${maxAttempts - 1}`);
+          }
+          await new Promise(r => setTimeout(r, attempt * 1500));
+        }
+      }
+    }
+
+    console.error('Google API Error:', lastErr);
+    return { status: 'error', message: String(lastErr) };
+  }
+
+  async function testGoogleConnection(isSilent = false) {
+    if (!gsheetConfig.scriptUrl) gsheetConfig.scriptUrl = DEFAULT_SCRIPT_URL;
+    saveLocal('qt_gsheet_config', gsheetConfig);
+
+    // Silent (page-load) check: skip the separate 'test' round trip and go
+    // straight to getAll — one request instead of two.
+    if (isSilent) {
+      await forceCloudSync();
+      return;
+    }
+
+    const res = await callGoogleApi('test');
+    if (res && res.status === 'success') {
+      isCloudConnected = true;
+      updateSyncBannerStatus(true, 'Connected to Google Sheet & Drive Database');
+      // Force pull full cloud dataset
+      await forceCloudSync();
+    } else {
+      isCloudConnected = false;
+      updateSyncBannerStatus(false, 'Failed to connect to Google Sheet — check Web App URL permissions');
+    }
+  }
+
+  async function forceCloudSync() {
+    if (!gsheetConfig.scriptUrl) {
+      return;
+    }
+
+    const btn = document.getElementById('btn-sync-now');
+    if (btn) btn.innerHTML = '<span class="animate-spin inline-block">↻</span> Syncing...';
+
+    const res = await callGoogleApi('getAll');
+    if (res && res.status !== 'error') {
+      isCloudConnected = true;
+      if (res.skus && Array.isArray(res.skus) && res.skus.length > 0) {
+        skus = res.skus;
+        saveLocal('qt_skus', skus);
+      }
+      if (res.quotations && Array.isArray(res.quotations) && res.quotations.length > 0) {
+        quotations = res.quotations.map(q => {
+          // The sheet stores line items in the 'itemsJson' column; the app
+          // reads them from 'items'. Normalize here after every cloud pull.
+          let items = q.items;
+          if (!Array.isArray(items)) {
+            if (Array.isArray(q.itemsJson)) {
+              items = q.itemsJson;
+            } else if (typeof q.itemsJson === 'string' && q.itemsJson.trim()) {
+              try { items = JSON.parse(q.itemsJson); } catch(e) { items = []; }
+            } else {
+              items = [];
+            }
+          }
+          // Pull deductions (stored as a marker entry inside itemsJson) back out of the items list
+          let deductions = Array.isArray(q.deductions) ? q.deductions : [];
+          const marker = items.find(i => i && Array.isArray(i.__deductions));
+          if (marker) { if (!deductions.length) deductions = marker.__deductions; }
+          const wht = (q.wht && q.wht.enabled) ? q.wht : (marker && marker.__wht) || null;
+          items = items.filter(i => !(i && i.__deductions));
+          return { ...q, items, deductions, wht };
+        });
+        saveLocal('qt_quotations', quotations);
+      }
+      if (res.settings && Object.keys(res.settings).length > 0) {
+        settings = { ...settings, ...res.settings };
+
+        // 'profiles' travels inside the generic Settings key/value sheet as
+        // a JSON string; parse it back into the profiles array.
+        if (typeof settings.profiles !== 'undefined') {
+          try {
+            const parsed = JSON.parse(settings.profiles);
+            if (Array.isArray(parsed)) profiles = parsed;
+          } catch(e) {}
+          delete settings.profiles;
+          saveLocal('qt_profiles', profiles);
+          renderProfilesList();
+          renderProfileDropdown();
+        }
+
+        if (typeof settings.qlocks !== 'undefined') {
+          try { const cl = JSON.parse(settings.qlocks); if (cl && typeof cl === 'object') qLocks = cl; } catch(e) {}
+          delete settings.qlocks;
+          saveLocal('qt_qlocks', qLocks);
+        }
+
+        if (typeof settings.qowners !== 'undefined') {
+          try { const co = JSON.parse(settings.qowners); if (co && typeof co === 'object') qOwners = co; } catch(e) {}
+          delete settings.qowners;
+          saveLocal('qt_qowners', qOwners);
+        }
+
+        saveLocal('qt_settings', settings);
+        applyAuthUI();
+        fillSettingsForm();
+      }
+
+      renderSkuCatalog();
+      renderSavedQuotations();
+      updateBadges();
+      updateSyncBannerStatus(true, 'Cloud Sync Complete');
+    } else {
+      isCloudConnected = false;
+      updateSyncBannerStatus(false, 'Sync Error — Using Local Storage Cache');
+    }
+
+    if (btn) btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Sync Now';
+  }
+
+  function updateSyncBannerStatus(connected, text) {
+    const banner = document.getElementById('sync-banner');
+    const textSpan = document.getElementById('sync-status-text');
+    const dot = document.getElementById('sync-dot');
+    const ping = document.getElementById('sync-ping');
+
+    if (connected) {
+      banner.className = 'bg-emerald-600 text-white text-xs font-medium px-4 py-2 flex items-center justify-between shadow-sm transition-all';
+      dot.className = 'relative inline-flex rounded-full h-2 w-2 bg-emerald-200';
+      ping.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75';
+    } else {
+      banner.className = 'bg-amber-600 text-white text-xs font-medium px-4 py-2 flex items-center justify-between shadow-sm transition-all';
+      dot.className = 'relative inline-flex rounded-full h-2 w-2 bg-amber-200';
+      ping.className = 'animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-75';
+    }
+    if (textSpan) textSpan.innerText = text;
+  }
+
+  // Ask Google for a small version of Drive images instead of the full-size original.
+  // e.g. https://lh3.googleusercontent.com/d/FILEID  ->  .../d/FILEID=s120
+  function thumbUrl(url, size = 120) {
+    if (!url || typeof url !== 'string' || url.startsWith('data:')) return url;
+    if (/googleusercontent\.com\/d\/[^=?&\/]+$/.test(url)) return `${url}=s${size}`;
+    const m = url.match(/drive\.google\.com\/(?:uc|thumbnail|open)\?[^#]*\bid=([\w-]+)/);
+    if (m) return `https://lh3.googleusercontent.com/d/${m[1]}=s${size}`;
+    return url;
+  }
+
+  // Shrink pasted/uploaded pictures before they are saved (big screenshots -> ~30-60 KB).
+  function compressImageDataUrl(src, maxPx = 500, type = 'image/jpeg', quality = 0.82) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const ratio = Math.min(1, maxPx / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * ratio));
+          const h = Math.max(1, Math.round(img.height * ratio));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (type === 'image/jpeg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); }
+          ctx.drawImage(img, 0, 0, w, h);
+          const out = canvas.toDataURL(type, quality);
+          resolve(out.length < src.length ? out : src);
+        } catch (e) { resolve(src); }
+      };
+      img.onerror = () => resolve(src);
+      img.src = src;
+    });
+  }
+
+  async function uploadImageToDriveOrLocal(base64Data, filename) {
+    if (isCloudConnected && gsheetConfig.scriptUrl) {
+      const res = await callGoogleApi('uploadImage', {
+        base64Data: base64Data,
+        fileName: filename || `img_${Date.now()}.png`,
+        folderId: gsheetConfig.driveFolderId
+      }, 'POST');
+      if (res && res.status === 'success' && res.url) {
+        return res.url;
+      }
+    }
+    // Fallback to Base64
+    return base64Data;
+  }
+
+  function toggleMobileMenu(forceOpen) {
+    const nav = document.getElementById('main-nav');
+    const btn = document.getElementById('nav-toggle');
+    if (!nav || !btn) return;
+    const open = typeof forceOpen === 'boolean' ? forceOpen : !nav.classList.contains('open');
+    nav.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    document.getElementById('nav-icon-open').classList.toggle('hidden', open);
+    document.getElementById('nav-icon-close').classList.toggle('hidden', !open);
+  }
+
+  // Block pinch-zoom on iOS Safari (it ignores user-scalable=no)
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev => document.addEventListener(ev, e => e.preventDefault()));
+
+  // Close the mobile menu when tapping outside it
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#main-nav') && !e.target.closest('#nav-toggle')) toggleMobileMenu(false);
+  });
+
+  function switchTab(tabId) {
+    toggleMobileMenu(false);
+    const me = getCurrentUser();
+    if (tabId === 'settings' && me && me.role !== 'admin') tabId = 'new';
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.className = 'tab-btn px-3.5 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap text-slate-600 hover:text-slate-900 hover:bg-slate-100';
+    });
+
+    if (me && me.role !== 'admin') {
+      const sb = document.getElementById('tab-btn-settings');
+      if (sb) sb.classList.add('hidden');
+    }
+
+    const targetPanel = document.getElementById(`tab-panel-${tabId}`);
+    const targetBtn = document.getElementById(`tab-btn-${tabId}`);
+    if (targetPanel) targetPanel.classList.remove('hidden');
+    if (targetBtn) {
+      targetBtn.className = 'tab-btn active px-3.5 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap text-brand-700 bg-brand-50 font-semibold';
+    }
+  }
+
+  function updateBadges() {
+    document.getElementById('badge-saved-count').innerText = quotations.length;
+    document.getElementById('badge-sku-count').innerText = skus.length;
+  }
+
+  function updateCurrencyDisplay() {
+    const symbol = settings.currency || '₱';
+    document.querySelectorAll('.currency-symbol').forEach(el => el.innerText = symbol);
+  }
+
+  function setButtonLoading(btn, loading, loadingText) {
+    if (!btn) return;
+    if (loading) {
+      if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg><span>${loadingText || 'Saving...'}</span>`;
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.originalHtml) {
+        btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.originalHtml;
+      }
+    }
+  }
+
+  function formatMoney(amount) {
+    const symbol = settings.currency || '₱';
+    return `${symbol}${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  let editingQuotationId = null;
+  let editingOriginal = null; // snapshot of the saved quotation being edited (keeps original Prepared By)
+
+  function isQNoTaken(qNo, list = quotations) {
+    const target = String(qNo || '').trim().toLowerCase();
+    if (!target) return false;
+    return list.some(q => q.id !== editingQuotationId && String(q.qNo || '').trim().toLowerCase() === target);
+  }
+
+  function generateNextQNo() {
+    const year = new Date().getFullYear();
+    let count = quotations.length + 1;
+    let candidate = `QT-${year}-${String(count).padStart(3, '0')}`;
+    while (isQNoTaken(candidate)) {
+      count++;
+      candidate = `QT-${year}-${String(count).padStart(3, '0')}`;
+    }
+    return candidate;
+  }
+
+  function validateQNoLive() {
+    const input = document.getElementById('q-no-display');
+    const warn = document.getElementById('q-no-warning');
+    if (!input || !warn) return true;
+    const taken = isQNoTaken(input.value);
+    warn.classList.toggle('hidden', !taken);
+    warn.innerText = taken ? `⚠ ${input.value.trim()} is already used. Please enter a different number.` : '';
+    input.classList.toggle('border-red-500', taken);
+    input.classList.toggle('border-slate-300', !taken);
+    return !taken;
+  }
+
+  // --- Keyboard navigation for the SKU search dropdown ---
+  let skuMatches = [];
+  let skuActiveIndex = -1;
+
+  function setSkuActive(i, scroll) {
+    const rows = document.querySelectorAll('#sku-search-results .sku-row');
+    rows.forEach(r => r.classList.remove('active'));
+    skuActiveIndex = i;
+    if (i >= 0 && rows[i]) {
+      rows[i].classList.add('active');
+      if (scroll) rows[i].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function onSkuSearchKeydown(e) {
+    const results = document.getElementById('sku-search-results');
+    const isOpen = !results.classList.contains('hidden');
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isOpen) { filterSkuSearch(); return; }
+      if (!skuMatches.length) return;
+      const n = skuMatches.length;
+      const next = e.key === 'ArrowDown'
+        ? (skuActiveIndex + 1) % n
+        : (skuActiveIndex - 1 + n) % n;
+      setSkuActive(next, true);
+    } else if (e.key === 'Enter') {
+      if (isOpen && skuActiveIndex >= 0 && skuMatches[skuActiveIndex]) {
+        e.preventDefault();
+        addSkuToQuotation(skuMatches[skuActiveIndex].id);
+      }
+    } else if (e.key === 'Escape') {
+      results.classList.add('hidden');
+    }
+  }
+
+  function filterSkuSearch() {
+    const input = document.getElementById('sku-search-input');
+    const query = input.value.trim().toLowerCase();
+    const resultsContainer = document.getElementById('sku-search-results');
+
+    if (!query) {
+      resultsContainer.classList.add('hidden');
+      return;
+    }
+
+    const matches = skus.filter(s => 
+      (s.sku && s.sku.toLowerCase().includes(query)) ||
+      (s.spec && s.spec.toLowerCase().includes(query))
+    );
+
+    skuMatches = [];
+    if (matches.length === 0) {
+      resultsContainer.innerHTML = `<div class="p-3 text-xs text-slate-400 text-center">No matching SKU found. You can add custom item rows below.</div>`;
+    } else {
+      skuMatches = matches;
+      resultsContainer.innerHTML = matches.map((s, i) => `
+        <div data-i="${i}" onmouseenter="setSkuActive(${i}, false)" onclick="addSkuToQuotation('${s.id}')" class="sku-row p-2.5 hover:bg-brand-50 cursor-pointer flex items-center justify-between transition group">
+          <div class="flex items-center gap-2.5">
+            ${s.picture ? `<img src="${thumbUrl(s.picture, 96)}" loading="lazy" decoding="async" class="w-8 h-8 rounded border object-cover">` : `<div class="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-[10px] text-slate-400">No Pic</div>`}
+            <div>
+              <div class="sku-code text-xs font-bold text-slate-800 group-hover:text-brand-700">${escapeHtml(s.sku)}</div>
+              <div class="text-[11px] text-slate-500 truncate max-w-sm">${escapeHtml(s.spec || '')}</div>
+            </div>
+          </div>
+          <div class="text-xs font-bold text-brand-700">${formatMoney(s.srp)}</div>
+        </div>
+      `).join('');
+    }
+
+    resultsContainer.classList.remove('hidden');
+    setSkuActive(skuMatches.length ? 0 : -1, true);
+  }
+
+  // Close search dropdown on click outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#sku-search-input') && !e.target.closest('#sku-search-results')) {
+      document.getElementById('sku-search-results').classList.add('hidden');
+    }
+  });
+
+  function addSkuToQuotation(skuId) {
+    const skuObj = skus.find(s => s.id === skuId);
+    if (!skuObj) return;
+
+    currentQuotationItems.push({
+      id: 'i_' + Date.now() + Math.random().toString(36).substr(2, 4),
+      skuId: skuObj.id,
+      sku: skuObj.sku,
+      spec: skuObj.spec || '',
+      qty: 1,
+      unit: 'pc/s',
+      srp: Number(skuObj.srp || 0),
+      disc: 0,
+      picture: skuObj.picture || ''
+    });
+
+    document.getElementById('sku-search-input').value = '';
+    document.getElementById('sku-search-results').classList.add('hidden');
+    renderQuotationTable();
+  }
+
+  function addCustomRow() {
+    currentQuotationItems.push({
+      id: 'i_' + Date.now() + Math.random().toString(36).substr(2, 4),
+      skuId: '',
+      sku: 'CUSTOM',
+      spec: '',
+      qty: 1,
+      unit: 'pc/s',
+      srp: 0,
+      disc: 0,
+      picture: ''
+    });
+    renderQuotationTable();
+  }
+
+  function removeQuotationItem(itemId) {
+    currentQuotationItems = currentQuotationItems.filter(i => i.id !== itemId);
+    renderQuotationTable();
+  }
+
+  const UNIT_OPTIONS = ['pc/s', 'set/s', 'lot', 'mtr/s', 'ft', 'roll/s', 'box/es', 'pack/s', 'pair/s', 'bundle/s', 'unit/s', 'sq.m', 'length/s', 'job'];
+
+  function unitSelectHtml(item) {
+    const cur = item.unit || 'pc/s';
+    const opts = UNIT_OPTIONS.includes(cur) ? UNIT_OPTIONS : [...UNIT_OPTIONS, cur];
+    return `<select onchange="updateItemUnit('${item.id}', this.value)" title="Unit of measure" class="w-16 mt-1 px-0.5 py-1 text-[11px] text-center text-slate-600 border border-slate-300 rounded bg-white focus:ring-1 focus:ring-brand-500 outline-none">
+      ${opts.map(u => `<option value="${escapeHtml(u)}" ${u === cur ? 'selected' : ''}>${escapeHtml(u)}</option>`).join('')}
+      <option value="__custom__">Other…</option>
+    </select>`;
+  }
+
+  function updateItemUnit(itemId, value) {
+    const item = currentQuotationItems.find(i => i.id === itemId);
+    if (!item) return;
+    if (value === '__custom__') {
+      const custom = (window.prompt('Enter unit of measure (e.g. pc/s, mtr/s, lot):', '') || '').trim();
+      if (custom) item.unit = custom.slice(0, 12);
+    } else {
+      item.unit = value;
+    }
+    renderQuotationTable(false);
+  }
+
+  function updateItemField(itemId, field, value) {
+    const item = currentQuotationItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    if (field === 'qty' || field === 'srp' || field === 'disc') {
+      item[field] = Math.max(0, Number(value) || 0);
+    } else {
+      item[field] = value;
+    }
+    renderQuotationTable(false); // don't focus recreate
+  }
+
+  // Used for live (oninput) updates on Qty/SRP/Disc so the row isn't
+  // rebuilt on every keystroke — that was destroying focus mid-typing.
+  function updateItemFieldLive(itemId, field, value) {
+    const item = currentQuotationItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    item[field] = Math.max(0, Number(value) || 0);
+
+    const unitNet = item.srp * (1 - (item.disc / 100));
+    const lineTotal = unitNet * item.qty;
+
+    const unitNetEl = document.getElementById(`unitnet-${item.id}`);
+    const lineTotalEl = document.getElementById(`linetotal-${item.id}`);
+    if (unitNetEl) unitNetEl.innerText = formatMoney(unitNet);
+    if (lineTotalEl) lineTotalEl.innerText = formatMoney(lineTotal);
+
+    calculateQuotationTotals();
+  }
+
+  function renderQuotationTable(rebuildInputs = true) {
+    const tbody = document.getElementById('items-tbody');
+    const emptyState = document.getElementById('items-empty-state');
+
+    if (currentQuotationItems.length === 0) {
+      tbody.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      calculateQuotationTotals();
+      return;
+    }
+
+    emptyState.classList.add('hidden');
+
+    tbody.innerHTML = currentQuotationItems.map((item, idx) => {
+      const unitNet = item.srp * (1 - (item.disc / 100));
+      const lineTotal = unitNet * item.qty;
+
+      return `
+        <tr class="hover:bg-slate-50/80 transition">
+          <td class="py-2 px-3 align-top space-y-1 cell-main" data-label="Item">
+            <input type="text" value="${escapeHtml(item.sku)}" onchange="updateItemField('${item.id}', 'sku', this.value)" placeholder="SKU Code" class="w-full font-mono text-xs font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-brand-500 outline-none">
+            <textarea onchange="updateItemField('${item.id}', 'spec', this.value)" rows="2" placeholder="Item Specs" class="w-full text-[11px] text-slate-500 bg-slate-50 p-1 rounded border border-slate-200 focus:bg-white outline-none resize-y">${escapeHtml(item.spec)}</textarea>
+          </td>
+          <td class="py-2 px-3 align-top text-center cell-pic" data-label="Picture">
+            <div id="pic-cell-${item.id}" tabindex="0" onclick="this.focus()" title="Click here, then press Ctrl+V to paste an image" class="mx-auto flex items-center justify-center rounded border outline-none cursor-pointer transition ${item.picture ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 hover:border-brand-500 bg-slate-50'} focus:border-brand-500 focus:ring-2 focus:ring-brand-200" style="width:64px;height:64px;aspect-ratio:1/1;">
+              ${item.picture ? `<img src="${thumbUrl(item.picture, 192)}" loading="lazy" decoding="async" class="w-full h-full rounded" style="object-fit:contain;display:block;">` : `<span class="text-[8px] leading-tight text-slate-400 px-1">Click +<br>Ctrl+V</span>`}
+            </div>
+          </td>
+          <td class="py-2 px-3 align-top text-center" data-label="Qty">
+            <input type="number" min="1" value="${item.qty}" oninput="updateItemFieldLive('${item.id}', 'qty', this.value)" onchange="updateItemField('${item.id}', 'qty', this.value)" class="w-16 px-1.5 py-1 text-xs text-center border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none">
+            <br>${unitSelectHtml(item)}
+          </td>
+          <td class="py-2 px-3 align-top text-right" data-label="SRP (${settings.currency || '₱'})">
+            <input type="number" step="0.01" value="${item.srp}" oninput="updateItemFieldLive('${item.id}', 'srp', this.value)" onchange="updateItemField('${item.id}', 'srp', this.value)" class="w-24 px-1.5 py-1 text-xs text-right border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none">
+          </td>
+          <td class="py-2 px-3 align-top text-center" data-label="Disc %">
+            <input type="number" min="0" max="100" value="${item.disc}" oninput="updateItemFieldLive('${item.id}', 'disc', this.value)" onchange="updateItemField('${item.id}', 'disc', this.value)" class="w-16 px-1.5 py-1 text-xs text-center border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none">
+          </td>
+          <td id="unitnet-${item.id}" class="py-2 px-3 align-top text-right font-medium text-xs text-slate-700 pt-3" data-label="Unit Price">
+            ${formatMoney(unitNet)}
+          </td>
+          <td id="linetotal-${item.id}" class="py-2 px-3 align-top text-right font-bold text-xs text-slate-900 pt-3" data-label="Total">
+            ${formatMoney(lineTotal)}
+          </td>
+          <td class="py-2 px-2 align-top text-center pt-2.5 cell-actions">
+            <button onclick="removeQuotationItem('${item.id}')" class="text-slate-400 hover:text-red-600 transition" title="Delete Row">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Let each row's picture box accept a pasted (Ctrl+V) image, even for
+    // custom items that aren't in the SKU catalog yet.
+    currentQuotationItems.forEach(item => {
+      setupPasteListener(`pic-cell-${item.id}`, (base64) => updateItemField(item.id, 'picture', base64));
+    });
+
+    calculateQuotationTotals();
+  }
+
+  // ---- Additional deductions (store credit, additional discount, etc.) ----
+  function netAfterItemDiscounts(items) {
+    return (items || []).reduce((sum, item) => sum + (item.srp * (1 - ((item.disc || 0) / 100))) * item.qty, 0);
+  }
+
+  // Amount of one deduction in currency. 'percent' is taken from the net total after item discounts.
+  function deductionAmount(d, base) {
+    const v = Math.max(0, parseFloat(d.value) || 0);
+    return d.type === 'percent' ? base * (Math.min(v, 100) / 100) : v;
+  }
+
+  function totalDeductions(items, deductions) {
+    const base = netAfterItemDiscounts(items);
+    const sum = (deductions || []).reduce((t, d) => t + deductionAmount(d, base), 0);
+    return Math.min(sum, base); // never go below zero
+  }
+
+  // ---- BIR Form 2307 (creditable withholding tax) ----
+  function whtAmount(wht, total) {
+    if (!wht || !wht.enabled) return 0;
+    const rate = Math.max(0, Math.min(100, parseFloat(wht.rate) || 0));
+    const base = wht.vatExclusive ? total / 1.12 : total;
+    return base * rate / 100;
+  }
+
+  function whtDescription(wht) {
+    return `${parseFloat(wht.rate) || 0}% ${wht.vatExclusive ? 'of VAT-exclusive amount' : 'of total amount'}`;
+  }
+
+  function onWhtChange() {
+    currentWht = {
+      enabled: document.getElementById('wht-enabled').checked,
+      rate: parseFloat(document.getElementById('wht-rate').value) || 0,
+      vatExclusive: document.getElementById('wht-basis').value === 'vatex'
+    };
+    document.getElementById('wht-options').classList.toggle('hidden', !currentWht.enabled);
+    calculateQuotationTotals();
+  }
+
+  function setWhtUI(wht) {
+    currentWht = wht && wht.enabled ? { enabled: true, rate: parseFloat(wht.rate) || 0, vatExclusive: wht.vatExclusive !== false } : { enabled: false, rate: 1, vatExclusive: true };
+    const en = document.getElementById('wht-enabled');
+    if (!en) return;
+    en.checked = currentWht.enabled;
+    document.getElementById('wht-rate').value = currentWht.rate;
+    document.getElementById('wht-basis').value = currentWht.vatExclusive ? 'vatex' : 'total';
+    document.getElementById('wht-options').classList.toggle('hidden', !currentWht.enabled);
+    calculateQuotationTotals();
+  }
+
+  function addDeduction(label) {
+    currentDeductions.push({ id: 'ded_' + Date.now() + '_' + Math.floor(Math.random() * 1000), label: label || '', type: 'fixed', value: 0 });
+    renderDeductions();
+    const inputs = document.querySelectorAll('#deductions-list input[data-ded-label]');
+    const last = inputs[inputs.length - 1];
+    if (last) { if (!last.value) last.focus(); else { const v = document.querySelector('#deductions-list .ded-row:last-child input[data-ded-value]'); if (v) { v.focus(); v.select(); } } }
+  }
+
+  function updateDeduction(id, field, value) {
+    const d = currentDeductions.find(x => x.id === id);
+    if (!d) return;
+    d[field] = value;
+    if (field === 'type') renderDeductions(); else calculateQuotationTotals();
+  }
+
+  function removeDeduction(id) {
+    currentDeductions = currentDeductions.filter(x => x.id !== id);
+    renderDeductions();
+  }
+
+  function renderDeductions() {
+    const box = document.getElementById('deductions-list');
+    if (!box) return;
+    box.innerHTML = currentDeductions.map(d => `
+      <div class="ded-row bg-white border border-slate-200 rounded-lg p-2 space-y-1.5">
+        <div class="flex items-center gap-1.5">
+          <input type="text" data-ded-label value="${escapeHtml(d.label)}" placeholder="Deduction name (e.g. Store Credit)"
+            oninput="updateDeduction('${d.id}', 'label', this.value)"
+            class="flex-1 min-w-0 px-2 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          <button type="button" onclick="removeDeduction('${d.id}')" class="text-slate-400 hover:text-red-600 transition" title="Remove deduction">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <select onchange="updateDeduction('${d.id}', 'type', this.value)" class="px-1.5 py-1 text-xs border border-slate-300 rounded bg-white outline-none">
+            <option value="fixed" ${d.type !== 'percent' ? 'selected' : ''}>Amount (${escapeHtml(settings.currency || '₱')})</option>
+            <option value="percent" ${d.type === 'percent' ? 'selected' : ''}>Percent (%)</option>
+          </select>
+          <input type="number" data-ded-value min="0" step="any" value="${d.value || ''}" placeholder="0"
+            oninput="updateDeduction('${d.id}', 'value', this.value)"
+            class="w-24 px-2 py-1 text-xs text-right border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          <span id="ded-amt-${d.id}" class="ml-auto text-xs font-medium text-emerald-600"></span>
+        </div>
+      </div>
+    `).join('');
+    calculateQuotationTotals();
+  }
+
+  function calculateQuotationTotals() {
+    let subtotal = 0;
+    let totalDiscount = 0;
+
+    currentQuotationItems.forEach(item => {
+      const lineSrpTotal = item.srp * item.qty;
+      const unitNet = item.srp * (1 - (item.disc / 100));
+      const lineNetTotal = unitNet * item.qty;
+
+      subtotal += lineSrpTotal;
+      totalDiscount += (lineSrpTotal - lineNetTotal);
+    });
+
+    const base = subtotal - totalDiscount;
+    currentDeductions.forEach(d => {
+      const el = document.getElementById('ded-amt-' + d.id);
+      if (el) el.innerText = `-${formatMoney(deductionAmount(d, base))}`;
+    });
+    const grandTotal = base - totalDeductions(currentQuotationItems, currentDeductions);
+
+    document.getElementById('summary-subtotal').innerText = formatMoney(subtotal);
+    document.getElementById('summary-discount').innerText = `-${formatMoney(totalDiscount)}`;
+    document.getElementById('summary-grandtotal').innerText = formatMoney(grandTotal);
+
+    const wht = whtAmount(currentWht, grandTotal);
+    document.getElementById('wht-summary').classList.toggle('hidden', !currentWht.enabled);
+    if (currentWht.enabled) {
+      document.getElementById('wht-label').innerText = `Less: Withholding Tax (2307) – ${whtDescription(currentWht)}:`;
+      document.getElementById('summary-wht').innerText = `-${formatMoney(wht)}`;
+      document.getElementById('summary-netpayable').innerText = formatMoney(grandTotal - wht);
+    }
+  }
+
+  async function saveQuotation(shouldExportPdf = false) {
+    const customer = document.getElementById('q-customer').value.trim();
+    if (!customer) {
+      toast('Please enter a Customer or Company Name.', 'warning');
+      document.getElementById('q-customer').focus();
+      return;
+    }
+
+    if (currentQuotationItems.length === 0) {
+      toast('Please add at least one item to the quotation.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById(shouldExportPdf ? 'btn-save-export' : 'btn-save-quotation');
+    const otherBtn = document.getElementById(shouldExportPdf ? 'btn-save-quotation' : 'btn-save-export');
+    setButtonLoading(btn, true, shouldExportPdf ? 'Saving & Exporting...' : 'Saving...');
+    if (otherBtn) otherBtn.disabled = true;
+
+    try {
+      let grandTotal = 0;
+      currentQuotationItems.forEach(item => {
+        const unitNet = item.srp * (1 - (item.disc / 100));
+        grandTotal += (unitNet * item.qty);
+      });
+      grandTotal -= totalDeductions(currentQuotationItems, currentDeductions);
+      const cleanWht = (currentWht.enabled && (parseFloat(currentWht.rate) || 0) > 0) ? { enabled: true, rate: parseFloat(currentWht.rate), vatExclusive: !!currentWht.vatExclusive } : null;
+      const cleanDeductions = currentDeductions
+        .filter(d => (parseFloat(d.value) || 0) > 0)
+        .map(d => ({ id: d.id, label: (d.label || '').trim() || 'Deduction', type: d.type === 'percent' ? 'percent' : 'fixed', value: parseFloat(d.value) || 0 }));
+
+      const qNo = document.getElementById('q-no-display').value.trim() || generateNextQNo();
+
+      // Block duplicate quotation numbers — check local list and the latest cloud list
+      let taken = isQNoTaken(qNo);
+      if (!taken && isCloudConnected) {
+        const cloud = await callGoogleApi('getAll');
+        if (cloud && Array.isArray(cloud.quotations)) taken = isQNoTaken(qNo, cloud.quotations);
+      }
+      if (taken) {
+        document.getElementById('q-no-display').value = qNo;
+        validateQNoLive();
+        await uiAlert(`Quotation No. "${qNo}" is already used and cannot be saved again.\n\nPlease enter a different Quotation No.`, { title: 'Quotation No. already used', confirmText: 'Got it' });
+        document.getElementById('q-no-display').focus();
+        return;
+      }
+      const prep = getPrepFields();
+      const qObj = {
+        id: editingQuotationId || ('q_' + Date.now()),
+        qNo: qNo,
+        customer: customer,
+        project: document.getElementById('q-project').value.trim(),
+        address: document.getElementById('q-address').value.trim(),
+        valid: document.getElementById('q-valid').value.trim() || '7 DAYS',
+        date: document.getElementById('q-date').value || new Date().toISOString().slice(0,10),
+        total: grandTotal,
+        items: currentQuotationItems,
+        deductions: cleanDeductions,
+        wht: cleanWht,
+        // Deductions are also tucked into itemsJson so they survive the Google Sheet round-trip
+        itemsJson: JSON.stringify((cleanDeductions.length || cleanWht) ? [...currentQuotationItems, { __deductions: cleanDeductions, __wht: cleanWht }] : currentQuotationItems),
+        ...prep,
+        createdAt: Date.now()
+      };
+
+      // Password lock (optional)
+      const lockPw = document.getElementById('q-password').value;
+      const lockChanged = (lockPw || '') !== (qLocks[qObj.id] || '');
+
+      // Save locally (update in place if this quotation was already saved/being edited)
+      const existingIdx = quotations.findIndex(q => q.id === qObj.id);
+      if (existingIdx >= 0) {
+        qObj.createdAt = quotations[existingIdx].createdAt || qObj.createdAt;
+        quotations[existingIdx] = qObj;
+      } else {
+        quotations.unshift(qObj);
+      }
+      editingQuotationId = qObj.id;
+      saveLocal('qt_quotations', quotations);
+      // Remember who created/prepared this quotation (changes only if admin picked a different profile)
+      const ownerChanged = !!qObj.branchProfileId && qOwners[qObj.id] !== qObj.branchProfileId;
+      if (ownerChanged) { qOwners[qObj.id] = qObj.branchProfileId; saveLocal('qt_qowners', qOwners); }
+      // Apply the password lock locally right away; the cloud copy is synced in the background below
+      const applyLock = () => { if (lockPw) qLocks[qObj.id] = lockPw; else delete qLocks[qObj.id]; };
+      if (lockChanged) {
+        applyLock();
+        saveLocal('qt_qlocks', qLocks);
+      }
+      updateBadges();
+      renderSavedQuotations();
+
+      // Sync to Google Sheet in the background so the Save button doesn't wait on Google
+      if (isCloudConnected) {
+        (async () => {
+          try {
+            if (lockChanged || ownerChanged) await pushSharedSettings(() => { if (lockChanged) applyLock(); if (ownerChanged) qOwners[qObj.id] = qObj.branchProfileId; });
+            const res = await callGoogleApi('saveQuotation', { quotation: qObj }, 'POST');
+            if (!res || res.status === 'error') throw new Error(res && res.message ? res.message : 'No response');
+          } catch (err) {
+            console.error('Background sync failed:', err);
+            toast(`Quotation ${qNo} is saved on this device, but it didn't reach Google Sheet. Press Save again to retry.`, 'warning', { title: 'Sync failed', duration: 8000 });
+          }
+        })();
+      }
+
+      if (shouldExportPdf) {
+        previewQuotation();
+        setTimeout(() => window.print(), 300);
+      } else {
+        toast(`Quotation ${qNo} saved.`, 'success');
+      }
+    } finally {
+      setButtonLoading(btn, false);
+      if (otherBtn) otherBtn.disabled = false;
+    }
+  }
+
+  async function clearCurrentQuotation() {
+    if (await uiConfirm('Everything you typed in this quotation will be removed. Saved quotations are not affected.', { title: 'Clear this quotation form?', icon: 'eraser', tone: 'warning', confirmText: 'Clear form' })) {
+      document.getElementById('q-customer').value = '';
+      document.getElementById('q-project').value = '';
+      document.getElementById('q-address').value = '';
+      const profileSel = document.getElementById('q-profile');
+      if (profileSel) { const me = getCurrentUser(); profileSel.value = (me && me.role === 'user') ? me.profileId : ''; onQuotationProfileChange(); }
+      document.getElementById('q-password').value = '';
+      currentQuotationItems = [];
+      currentDeductions = [];
+      renderDeductions();
+      setWhtUI(null);
+      editingQuotationId = null;
+      editingOriginal = null;
+      profileChangeUnlocked = false;
+      renderProfileDropdown();
+      document.getElementById('q-no-display').value = generateNextQNo();
+      validateQNoLive();
+      renderQuotationTable();
+    }
+  }
+
+  let savedPage = 1;
+  let savedPageSize = 10;
+  let savedTotalPages = 1;
+
+  function onSavedSearchInput() { savedPage = 1; renderSavedQuotations(); }
+  function onSavedSortChange() { savedPage = 1; renderSavedQuotations(); }
+
+  // Sort the (already filtered) saved quotations. Default: newest to oldest.
+  // Protected (locked) quotations hide their customer/amount, so they sink to the bottom
+  // when sorting by those fields instead of leaking their order.
+  function sortSavedQuotations(list) {
+    const mode = document.getElementById('saved-sort')?.value || 'date-desc';
+    const [field, dir] = mode.split('-');
+    const mult = dir === 'asc' ? 1 : -1;
+    const time = q => { const d = parseQDate(q.date); return d ? d.getTime() : 0; };
+    const arr = list.slice();
+    arr.sort((a, b) => {
+      if (field === 'date') {
+        const diff = time(a) - time(b);
+        if (diff !== 0) return diff * mult;
+        return ((a.createdAt || 0) - (b.createdAt || 0)) * mult;
+      }
+      const la = isLockedFor(a), lb = isLockedFor(b);
+      if (field === 'amount' || field === 'name') {
+        if (la !== lb) return la ? 1 : -1;
+        if (la && lb) return 0;
+      }
+      if (field === 'amount') return ((Number(a.total) || 0) - (Number(b.total) || 0)) * mult;
+      if (field === 'name') return String(a.customer || '').localeCompare(String(b.customer || ''), undefined, { sensitivity: 'base', numeric: true }) * mult;
+      return String(a.qNo || '').localeCompare(String(b.qNo || ''), undefined, { sensitivity: 'base', numeric: true }) * mult;
+    });
+    return arr;
+  }
+  function onSavedPageSizeChange() {
+    savedPageSize = Number(document.getElementById('saved-page-size').value) || 10;
+    savedPage = 1;
+    renderSavedQuotations();
+  }
+  function goToSavedPage(page) {
+    if (page < 1 || page > savedTotalPages) return;
+    savedPage = page;
+    renderSavedQuotations();
+    const top = document.getElementById('saved-list-container');
+    if (top) top.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderSavedQuotations() {
+    const container = document.getElementById('saved-list-container');
+    const pagBar = document.getElementById('saved-pagination');
+    const query = (document.getElementById('saved-search-input')?.value || '').toLowerCase().trim();
+
+    const filtered = sortSavedQuotations(quotations.filter(q => {
+      const visible = !isLockedFor(q);
+      return (visible && q.customer && q.customer.toLowerCase().includes(query)) ||
+        (visible && q.project && q.project.toLowerCase().includes(query)) ||
+        (q.qNo && q.qNo.toLowerCase().includes(query));
+    }));
+
+    if (filtered.length === 0) {
+      container.innerHTML = `<div class="py-8 text-center text-slate-400 text-sm">No saved quotations found.</div>`;
+      if (pagBar) pagBar.style.display = 'none';
+      return;
+    }
+
+    savedTotalPages = Math.max(1, Math.ceil(filtered.length / savedPageSize));
+    if (savedPage > savedTotalPages) savedPage = savedTotalPages;
+    if (savedPage < 1) savedPage = 1;
+    const sStart = (savedPage - 1) * savedPageSize;
+    const pageItems = filtered.slice(sStart, sStart + savedPageSize);
+
+    if (pagBar) {
+      // Only show the bar when there is more than the smallest page size
+      pagBar.style.display = filtered.length > 10 ? 'flex' : 'none';
+      document.getElementById('saved-page-info').innerText = `Showing ${sStart + 1}–${sStart + pageItems.length} of ${filtered.length}`;
+      document.getElementById('saved-page-current').innerText = `Page ${savedPage} of ${savedTotalPages}`;
+    }
+
+    container.innerHTML = pageItems.map(q => { const locked = isLockedFor(q); const hasLock = !!qLocks[q.id]; return `
+      <div class="p-4 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition">
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">${q.qNo || 'QT-000'}</span>
+            <span class="text-sm font-bold text-slate-900">${locked ? '🔒 Protected quotation' : escapeHtml(q.customer)}${(!locked && hasLock) ? ' 🔒' : ''}</span>
+            <span class="text-xs text-slate-400">• ${formatQDate(q.date)}</span>
+          </div>
+          <p class="text-xs text-slate-600">${locked ? '' : escapeHtml(q.project || 'No project description')}</p>
+          <p class="text-[11px] text-slate-400">${locked ? '' : (q.items ? q.items.length : 0) + ' line item(s)'}</p>
+        </div>
+
+        <div class="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
+          <span class="text-base font-bold text-slate-900">${locked ? '—' : formatMoney(q.total)}</span>
+          <div class="flex items-center gap-1.5">
+            <button onclick="viewSavedQuotation('${q.id}')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-medium transition">View / Print</button>
+            <button onclick="editSavedQuotation('${q.id}')" class="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition">Edit</button>
+            <button onclick="deleteSavedQuotation('${q.id}')" class="p-1.5 text-slate-400 hover:text-red-600 transition" title="Delete">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    `; }).join('');
+  }
+
+  async function viewSavedQuotation(id) {
+    const q = quotations.find(item => item.id === id);
+    if (!q) return;
+    if (!(await requireQuotationAccess(q))) return;
+    renderPrintableModal(q);
+  }
+
+  async function editSavedQuotation(id) {
+    const q = quotations.find(item => item.id === id);
+    if (!q) return;
+    if (!(await requireQuotationAccess(q))) return;
+
+    editingQuotationId = q.id;
+    document.getElementById('q-password').value = qLocks[q.id] || '';
+    document.getElementById('q-no-display').value = q.qNo || 'QT-000';
+    validateQNoLive();
+    document.getElementById('q-customer').value = q.customer || '';
+    document.getElementById('q-project').value = q.project || '';
+    document.getElementById('q-address').value = q.address || '';
+    document.getElementById('q-valid').value = q.valid || '7 DAYS';
+    document.getElementById('q-date').value = toInputDate(q.date) || new Date().toISOString().slice(0,10);
+
+    editingOriginal = JSON.parse(JSON.stringify(q));
+    profileChangeUnlocked = false;
+    const profileSel = document.getElementById('q-profile');
+    if (profileSel) {
+      const me = getCurrentUser();
+      if (me && me.role === 'user') {
+        renderProfileDropdown();
+        profileSel.value = me.profileId;
+      } else {
+        // Admin: rebuild dropdown so it includes the "Original" option if needed,
+        // then select the profile that originally prepared this quotation.
+        renderProfileDropdown();
+        profileSel.value = resolveOriginalProfileValue(q);
+      }
+      onQuotationProfileChange();
+    }
+
+    currentQuotationItems = JSON.parse(JSON.stringify(q.items || []));
+    currentDeductions = JSON.parse(JSON.stringify(q.deductions || []));
+    renderDeductions();
+    setWhtUI(q.wht);
+    renderQuotationTable();
+    switchTab('new');
+  }
+
+  async function deleteSavedQuotation(id) {
+    const target = quotations.find(item => item.id === id);
+    if (target && !(await requireQuotationAccess(target))) return;
+    if (await uiConfirm('This saved quotation will be permanently deleted. This can\'t be undone.', { title: 'Delete this quotation?', icon: 'trash', tone: 'danger', confirmText: 'Delete' })) {
+      quotations = quotations.filter(q => q.id !== id);
+      if (qLocks[id]) { pushSharedSettings(() => { delete qLocks[id]; }); }
+      if (editingQuotationId === id) { editingQuotationId = null; editingOriginal = null; profileChangeUnlocked = false; }
+      saveLocal('qt_quotations', quotations);
+      updateBadges();
+      renderSavedQuotations();
+
+      if (isCloudConnected) {
+        callGoogleApi('deleteQuotation', { id: id }, 'POST');
+      }
+    }
+  }
+
+  // --- Catalog pagination state ---
+  let catalogPage = 1;
+  let catalogPageSize = 50;
+  let catalogTotalPages = 1;
+  let catalogSearchDebounceTimer = null;
+
+  function onCatalogSearchInput() {
+    // Debounce so filtering a large catalog doesn't re-render on every keystroke
+    clearTimeout(catalogSearchDebounceTimer);
+    catalogSearchDebounceTimer = setTimeout(() => {
+      catalogPage = 1;
+      renderSkuCatalog();
+    }, 200);
+  }
+
+  function onCatalogPageSizeChange() {
+    catalogPageSize = Number(document.getElementById('catalog-page-size').value) || 50;
+    catalogPage = 1;
+    renderSkuCatalog();
+  }
+
+  function goToCatalogPage(page) {
+    if (page < 1 || page > catalogTotalPages) return;
+    catalogPage = page;
+    renderSkuCatalog();
+  }
+
+  function renderSkuCatalog() {
+    const tbody = document.getElementById('sku-catalog-tbody');
+    const emptyState = document.getElementById('catalog-empty');
+    const paginationBar = document.getElementById('catalog-pagination');
+    const query = (document.getElementById('catalog-search')?.value || '').toLowerCase().trim();
+
+    const filtered = skus.filter(s => 
+      (s.sku && s.sku.toLowerCase().includes(query)) ||
+      (s.spec && s.spec.toLowerCase().includes(query))
+    );
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      paginationBar.style.display = 'none';
+      return;
+    }
+
+    emptyState.classList.add('hidden');
+
+    catalogTotalPages = Math.max(1, Math.ceil(filtered.length / catalogPageSize));
+    if (catalogPage > catalogTotalPages) catalogPage = catalogTotalPages;
+    if (catalogPage < 1) catalogPage = 1;
+
+    const startIdx = (catalogPage - 1) * catalogPageSize;
+    const pageItems = filtered.slice(startIdx, startIdx + catalogPageSize);
+
+    // Only the current page's rows are ever built/inserted into the DOM,
+    // so the browser never has to hold thousands of rows at once.
+    tbody.innerHTML = pageItems.map(s => `
+      <tr class="hover:bg-slate-50 transition">
+        <td class="py-2.5 px-3 cell-pic" data-label="Picture">
+          ${s.picture ? `<img src="${thumbUrl(s.picture, 120)}" loading="lazy" decoding="async" class="w-10 h-10 object-contain bg-white rounded border border-slate-200">` : `<div class="w-10 h-10 bg-slate-100 rounded flex items-center justify-center text-[9px] text-slate-400">No Pic</div>`}
+        </td>
+        <td class="py-2.5 px-3 font-mono text-xs font-bold text-brand-800 cell-main" data-label="SKU Code">${escapeHtml(s.sku)}</td>
+        <td class="py-2.5 px-3 text-xs text-slate-600 whitespace-pre-line cell-block" data-label="Specifications">${escapeHtml(s.spec || '-')}</td>
+        <td class="py-2.5 px-3 text-right font-bold text-slate-900" data-label="SRP (${settings.currency || '₱'})">${formatMoney(s.srp)}</td>
+        <td class="py-2.5 px-3 text-center" data-label="Actions">
+          <div class="flex items-center justify-center gap-1.5">
+            <button onclick="editSkuCatalog('${s.id}')" class="p-1 text-slate-500 hover:text-brand-600 transition" title="Edit">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            </button>
+            <button onclick="deleteSkuCatalog('${s.id}')" class="p-1 text-slate-500 hover:text-red-600 transition" title="Delete">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    // Update pagination bar
+    paginationBar.style.display = 'flex';
+    const endIdx = Math.min(startIdx + pageItems.length, filtered.length);
+    document.getElementById('catalog-page-info').innerText =
+      `Showing ${startIdx + 1}–${endIdx} of ${filtered.length}${filtered.length !== skus.length ? ' (filtered)' : ''}`;
+    document.getElementById('catalog-page-current').innerText = `Page ${catalogPage} of ${catalogTotalPages}`;
+  }
+
+  async function saveSkuToCatalog() {
+    const skuCode = document.getElementById('s-sku').value.trim();
+    if (!skuCode) {
+      toast('Please enter a SKU Code.', 'warning');
+      document.getElementById('s-sku').focus();
+      return;
+    }
+
+    const btn = document.getElementById('btn-save-sku');
+    setButtonLoading(btn, true, 'Saving...');
+
+    try {
+      const editId = document.getElementById('s-edit-id').value;
+      const rawPic = document.getElementById('s-picture-data').value;
+      let finalPicUrl = rawPic;
+
+      // Upload picture to Drive if Base64 and Drive connected
+      if (rawPic && rawPic.startsWith('data:image')) {
+        finalPicUrl = await uploadImageToDriveOrLocal(rawPic, `sku_${skuCode.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
+      }
+
+      const skuObj = {
+        id: editId || ('sku_' + Date.now()),
+        sku: skuCode,
+        srp: Number(document.getElementById('s-srp').value) || 0,
+        spec: document.getElementById('s-spec').value.trim(),
+        picture: finalPicUrl
+      };
+
+      if (editId) {
+        const idx = skus.findIndex(s => s.id === editId);
+        if (idx !== -1) skus[idx] = skuObj;
+      } else {
+        skus.unshift(skuObj);
+      }
+
+      saveLocal('qt_skus', skus);
+      updateBadges();
+      renderSkuCatalog();
+      cancelSkuEdit();
+
+      // Sync to Google Sheet
+      if (isCloudConnected) {
+        await callGoogleApi('saveSku', { sku: skuObj }, 'POST');
+      }
+
+      toast('SKU saved to the catalog.', 'success');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
+
+  function editSkuCatalog(id) {
+    const s = skus.find(item => item.id === id);
+    if (!s) return;
+
+    document.getElementById('s-edit-id').value = s.id;
+    document.getElementById('s-sku').value = s.sku || '';
+    document.getElementById('s-srp').value = s.srp || '';
+    document.getElementById('s-spec').value = s.spec || '';
+
+    if (s.picture) {
+      setSkuPicturePreview(s.picture);
+    } else {
+      clearSkuPicture();
+    }
+
+    document.getElementById('sku-form-title').innerText = 'Edit SKU Details';
+    document.getElementById('sku-cancel-edit-btn').classList.remove('hidden');
+    document.getElementById('s-sku').focus();
+  }
+
+  function cancelSkuEdit() {
+    document.getElementById('s-edit-id').value = '';
+    document.getElementById('s-sku').value = '';
+    document.getElementById('s-srp').value = '';
+    document.getElementById('s-spec').value = '';
+    clearSkuPicture();
+    document.getElementById('sku-form-title').innerText = 'Add New SKU to Database';
+    document.getElementById('sku-cancel-edit-btn').classList.add('hidden');
+  }
+
+  async function deleteSkuCatalog(id) {
+    if (await uiConfirm('This SKU will be removed from the catalog. This can\'t be undone.', { title: 'Delete this SKU?', icon: 'trash', tone: 'danger', confirmText: 'Delete' })) {
+      skus = skus.filter(s => s.id !== id);
+      saveLocal('qt_skus', skus);
+      updateBadges();
+      renderSkuCatalog();
+
+      if (isCloudConnected) {
+        callGoogleApi('deleteSku', { id: id }, 'POST');
+      }
+    }
+  }
+
+  function setupPasteListener(elementId, callback) {
+    const elem = document.getElementById(elementId);
+    if (!elem) return;
+
+    elem.addEventListener('paste', (e) => {
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      for (let item of items) {
+        if (item.type.indexOf('image') === 0) {
+          const blob = item.getAsFile();
+          const reader = new FileReader();
+          reader.onload = async (event) => callback(await compressImageDataUrl(event.target.result, elementId === 'logo-paste-zone' ? 600 : 500, elementId === 'logo-paste-zone' ? 'image/png' : 'image/jpeg'));
+          reader.readAsDataURL(blob);
+        }
+      }
+    });
+  }
+
+  function handleSkuPictureFile(input) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = async (e) => setSkuPicturePreview(await compressImageDataUrl(e.target.result));
+      reader.readAsDataURL(input.files[0]);
+    }
+  }
+
+  function setSkuPicturePreview(src) {
+    document.getElementById('s-picture-data').value = src;
+    document.getElementById('s-picture-preview').src = src;
+    document.getElementById('s-picture-preview-wrap').classList.remove('hidden');
+  }
+
+  function clearSkuPicture() {
+    document.getElementById('s-picture-data').value = '';
+    document.getElementById('s-picture-preview').src = '';
+    document.getElementById('s-picture-file').value = '';
+    document.getElementById('s-picture-preview-wrap').classList.add('hidden');
+  }
+
+  function handleLogoFile(input) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = async (e) => setCompanyLogoPreview(await compressImageDataUrl(e.target.result, 600, 'image/png'));
+      reader.readAsDataURL(input.files[0]);
+    }
+  }
+
+  function setCompanyLogoPreview(src) {
+    settings.logo = src;
+    document.getElementById('set-logo-preview').src = src;
+    document.getElementById('logo-preview-wrap').classList.remove('hidden');
+  }
+
+  function clearCompanyLogo() {
+    settings.logo = '';
+    document.getElementById('set-logo-file').value = '';
+    document.getElementById('set-logo-preview').src = '';
+    document.getElementById('logo-preview-wrap').classList.add('hidden');
+  }
+
+  // --- Per-quotation passwords & per-user Terms ---
+  // Locks live in the shared Settings sheet (key "qlocks") so they survive cloud syncs.
+  let qLocks = loadLocal('qt_qlocks', {});
+  // Who created each quotation (quotation id -> profile id). Stored in shared Settings so it survives cloud sync.
+  let qOwners = loadLocal('qt_qowners', {});
+  let profileChangeUnlocked = false;
+  const sessionUnlocked = {};
+
+  function buildSettingsPayload() {
+    return { ...settings, profiles: JSON.stringify(profiles), qlocks: JSON.stringify(qLocks), qowners: JSON.stringify(qOwners) };
+  }
+
+  // Merge my change on top of the latest cloud copy so other users' changes aren't overwritten.
+  async function pushSharedSettings(mutate) {
+    if (isCloudConnected) {
+      const cloud = await callGoogleApi('getAll');
+      if (cloud && cloud.status !== 'error' && cloud.settings) {
+        try { const cp = JSON.parse(cloud.settings.profiles || 'null'); if (Array.isArray(cp)) profiles = cp; } catch(e) {}
+        try { const cl = JSON.parse(cloud.settings.qlocks || 'null'); if (cl && typeof cl === 'object') qLocks = cl; } catch(e) {}
+        try { const co = JSON.parse(cloud.settings.qowners || 'null'); if (co && typeof co === 'object') qOwners = co; } catch(e) {}
+      }
+    }
+    mutate();
+    saveLocal('qt_profiles', profiles);
+    saveLocal('qt_qlocks', qLocks);
+    saveLocal('qt_qowners', qOwners);
+    if (isCloudConnected) {
+      await callGoogleApi('saveSettings', { settings: buildSettingsPayload() }, 'POST');
+    }
+  }
+
+  function getOwnerId(q) {
+    return (q && (qOwners[q.id] || q.branchProfileId)) || '';
+  }
+  function isOwner(q) {
+    const me = getCurrentUser();
+    const oid = getOwnerId(q);
+    return !!(me && me.role === 'user' && oid && oid === me.profileId);
+  }
+  function hasQuotationAccess(q) {
+    const me = getCurrentUser();
+    if (me && me.role === 'admin') return true;
+    if (!qLocks[q.id]) return true;
+    return isOwner(q) || !!sessionUnlocked[q.id];
+  }
+  function isLockedFor(q) { return !hasQuotationAccess(q); }
+  async function requireQuotationAccess(q) {
+    if (hasQuotationAccess(q)) return true;
+    const pw = await uiPrompt('Protected ang quotation na ito. Ilagay ang password para ma-open.', { title: 'Password required', input: 'password', placeholder: 'Password', confirmText: 'Unlock' });
+    if (pw === null) return false;
+    if (pw === qLocks[q.id]) { sessionUnlocked[q.id] = true; renderSavedQuotations(); return true; }
+    toast('Mali ang password. Subukan ulit.', 'error');
+    return false;
+  }
+
+  function renderMyTermsBox() {
+    const box = document.getElementById('my-terms-box');
+    if (!box) return;
+    const me = getCurrentUser();
+    if (!me || me.role !== 'user') { box.classList.add('hidden'); return; }
+    const mine = profiles.find(p => p.id === me.profileId);
+    box.classList.remove('hidden');
+    document.getElementById('my-terms-text').value = mine ? (mine.terms !== undefined ? mine.terms : (settings.terms || '')) : '';
+  }
+
+  async function saveMyTerms() {
+    const me = getCurrentUser();
+    if (!me || me.role !== 'user') return;
+    const text = document.getElementById('my-terms-text').value.trim();
+    await pushSharedSettings(() => {
+      const mine = profiles.find(p => p.id === me.profileId);
+      if (mine) mine.terms = text;
+    });
+    toast('Na-save na ang Terms & Conditions mo.', 'success');
+  }
+
+  // --- Simple Login / Logout ---
+  // Admin (username "admin") sees everything. Each profile can have a
+  // username + password; that user only sees their own Prepared By / Branch.
+  // NOTE: this is client-side only (convenience separation, not hard security).
+  const SESSION_KEY = 'qt_session';
+
+  function getCurrentUser() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+
+  function initAuth() { applyAuthUI(); }
+
+  function applyAuthUI() {
+    const me = getCurrentUser();
+    const overlay = document.getElementById('login-overlay');
+    const chip = document.getElementById('user-chip');
+    const settingsBtn = document.getElementById('tab-btn-settings');
+
+    // If a user's profile was deleted/renamed in the cloud, re-validate session.
+    if (me && me.role === 'user' && profiles.length > 0 && !profiles.some(p => p.id === me.profileId)) {
+      doLogout();
+      return;
+    }
+
+    if (!me) {
+      overlay.classList.remove('hidden');
+      chip.classList.add('hidden');
+      return;
+    }
+
+    overlay.classList.add('hidden');
+    chip.classList.remove('hidden');
+    const chipName = me.role === 'admin' ? 'Admin' : (me.name || me.username);
+    const chipEl = document.getElementById('user-chip-name');
+    chipEl.innerText = chipName;
+    chipEl.title = chipName;
+    const navUserName = document.getElementById('nav-user-name');
+    if (navUserName) { navUserName.innerText = chipName; navUserName.title = chipName; }
+    if (settingsBtn) settingsBtn.classList.toggle('hidden', me.role !== 'admin');
+    if (me.role !== 'admin') {
+      const panel = document.getElementById('tab-panel-settings');
+      if (panel && !panel.classList.contains('hidden')) switchTab('new');
+    }
+    renderProfileDropdown();
+    renderMyTermsBox();
+  }
+
+  async function doLogin() {
+    const u = document.getElementById('login-user').value.trim();
+    const pw = document.getElementById('login-pass').value;
+    const err = document.getElementById('login-error');
+    const btn = document.getElementById('login-btn');
+    err.classList.add('hidden');
+
+    const attempt = () => {
+      if (u.toLowerCase() === 'admin' && pw === (settings.adminPassword || 'admin123')) {
+        return { role: 'admin', username: 'admin' };
+      }
+      const p = profiles.find(x => x.username && x.username.toLowerCase() === u.toLowerCase() && (x.password || '') === pw);
+      if (p) return { role: 'user', username: p.username, profileId: p.id, name: p.preparedby || p.label };
+      return null;
+    };
+
+    let result = attempt();
+    // Fresh device: profiles may not have synced from Google Sheet yet.
+    if (!result && gsheetConfig.scriptUrl) {
+      btn.disabled = true; btn.innerText = 'Checking…';
+      await forceCloudSync();
+      btn.disabled = false; btn.innerText = 'Log In';
+      result = attempt();
+    }
+
+    if (!result) {
+      err.innerText = 'Mali ang username o password.';
+      err.classList.remove('hidden');
+      return;
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(result));
+    document.getElementById('login-pass').value = '';
+    applyAuthUI();
+    switchTab('new');
+  }
+
+  function doLogout() {
+    toggleMobileMenu(false);
+    localStorage.removeItem(SESSION_KEY);
+    document.getElementById('login-user').value = '';
+    document.getElementById('login-pass').value = '';
+    currentQuotationItems = [];
+    currentDeductions = [];
+    renderDeductions();
+    setWhtUI(null);
+    applyAuthUI();
+  }
+
+  // --- Salesperson / Branch Profiles ---
+  // Each profile snapshots a Prepared-By name + address/email/phone that can
+  // be picked per quotation, so one app can serve multiple branches/salespeople.
+
+  function renderProfilesList() {
+    const container = document.getElementById('profiles-list');
+    if (!container) return;
+
+    if (profiles.length === 0) {
+      container.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">No profiles yet. Click "Add Profile" to create one per branch or salesperson.</p>';
+      return;
+    }
+
+    container.innerHTML = profiles.map(p => `
+      <div class="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/60">
+        <div class="flex items-center gap-2">
+          <input type="text" value="${escapeHtml(p.label)}" placeholder="Label (e.g. Donnie - BGC Branch)" oninput="updateProfileField('${p.id}','label',this.value)" class="flex-1 font-semibold text-sm px-2 py-1.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          <button onclick="removeProfileRow('${p.id}')" class="p-1.5 text-slate-400 hover:text-red-600 transition shrink-0" title="Delete Profile">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <input type="text" value="${escapeHtml(p.preparedby)}" placeholder="Prepared By (Salesperson name)" oninput="updateProfileField('${p.id}','preparedby',this.value)" class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          <input type="text" value="${escapeHtml(p.phone)}" placeholder="Phone / Mobile" oninput="updateProfileField('${p.id}','phone',this.value)" class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          <input type="text" value="${escapeHtml(p.username || '')}" placeholder="Login Username" autocomplete="off" oninput="updateProfileField('${p.id}','username',this.value)" class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          <input type="text" value="${escapeHtml(p.password || '')}" placeholder="Login Password" autocomplete="off" oninput="updateProfileField('${p.id}','password',this.value)" class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          <input type="email" value="${escapeHtml(p.email)}" placeholder="Email Address" oninput="updateProfileField('${p.id}','email',this.value)" class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+          <input type="text" value="${escapeHtml(p.address)}" placeholder="Branch Address" oninput="updateProfileField('${p.id}','address',this.value)" class="px-2 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500">
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function addProfileRow() {
+    profiles.push({
+      id: 'p_' + Date.now() + Math.random().toString(36).slice(2, 6),
+      label: '', preparedby: '', address: '', email: '', phone: '', username: '', password: ''
+    });
+    renderProfilesList();
+  }
+
+  async function removeProfileRow(id) {
+    if (!(await uiConfirm('This profile will be removed from the list. Changes apply once you save settings.', { title: 'Remove this profile?', icon: 'trash', tone: 'danger', confirmText: 'Remove' }))) return;
+    profiles = profiles.filter(p => p.id !== id);
+    renderProfilesList();
+    renderProfileDropdown();
+  }
+
+  function updateProfileField(id, field, value) {
+    const p = profiles.find(x => x.id === id);
+    if (p) p[field] = value;
+  }
+
+  function renderProfileDropdown() {
+    const sel = document.getElementById('q-profile');
+    if (!sel) return;
+    const current = sel.value;
+    const me = getCurrentUser();
+    if (me && me.role === 'user') {
+      // Regular user: only their own Prepared By / Branch, locked.
+      const mine = profiles.find(p => p.id === me.profileId);
+      sel.innerHTML = mine
+        ? `<option value="${mine.id}">${escapeHtml(mine.label || 'Untitled Profile')}</option>`
+        : '<option value="">— No profile assigned —</option>';
+      sel.value = mine ? mine.id : '';
+      sel.disabled = true;
+      sel.classList.add('bg-slate-100');
+      const chg0 = document.getElementById('q-profile-change');
+      if (chg0) chg0.classList.add('hidden');
+    } else {
+      const lockedToOriginal = !!editingOriginal && !profileChangeUnlocked;
+      sel.disabled = lockedToOriginal;
+      sel.classList.toggle('bg-slate-100', lockedToOriginal);
+      const chg = document.getElementById('q-profile-change');
+      if (chg) chg.classList.toggle('hidden', !lockedToOriginal);
+      sel.innerHTML = '<option value="">— Use Default Company Info —</option>' +
+        profiles.map(p => `<option value="${p.id}">${escapeHtml(p.label || 'Untitled Profile')}</option>`).join('');
+      if (editingOriginal && resolveOriginalProfileValue(editingOriginal) === '__orig__') {
+        sel.insertAdjacentHTML('beforeend', `<option value="__orig__">Original: ${escapeHtml(editingOriginal.preparedBy || 'Unknown')} (as saved)</option>`);
+      }
+      if (current === '__orig__' && sel.querySelector('option[value="__orig__"]')) sel.value = '__orig__';
+      else if (profiles.some(p => p.id === current)) sel.value = current;
+      else if (editingOriginal && !current) sel.value = resolveOriginalProfileValue(editingOriginal);
+    }
+    onQuotationProfileChange();
+  }
+
+  function unlockProfileChange() {
+    profileChangeUnlocked = true;
+    renderProfileDropdown();
+  }
+
+  // Which dropdown value represents the profile that originally prepared quotation q?
+  function resolveOriginalProfileValue(q) {
+    const oid = getOwnerId(q);
+    if (oid && profiles.some(p => p.id === oid)) return oid;
+    // Fallback: match by saved Prepared By name
+    const name = String(q.preparedBy || '').trim().toLowerCase();
+    if (name) {
+      const m = profiles.find(p => String(p.preparedby || '').trim().toLowerCase() === name);
+      if (m) return m.id;
+      return '__orig__'; // keep the originally saved values untouched
+    }
+    return '';
+  }
+
+  // Prepared-By fields to store/print for the current form selection.
+  function getPrepFields() {
+    const sel = document.getElementById('q-profile');
+    if (sel && sel.value === '__orig__' && editingOriginal) {
+      return {
+        branchProfileId: editingOriginal.branchProfileId || '',
+        preparedBy: editingOriginal.preparedBy || '',
+        branchAddress: editingOriginal.branchAddress || '',
+        branchEmail: editingOriginal.branchEmail || '',
+        branchPhone: editingOriginal.branchPhone || ''
+      };
+    }
+    const p = getSelectedProfile();
+    return {
+      branchProfileId: p ? p.id : '',
+      preparedBy: p ? p.preparedby : (settings.preparedby || ''),
+      branchAddress: p ? p.address : (settings.address || ''),
+      branchEmail: p ? p.email : (settings.email || ''),
+      branchPhone: p ? p.phone : (settings.phone || '')
+    };
+  }
+
+  function onQuotationProfileChange() {
+    const sel = document.getElementById('q-profile');
+    const hint = document.getElementById('q-profile-hint');
+    if (!sel || !hint) return;
+    if (sel.value === '__orig__' && editingOriginal) {
+      hint.innerText = [editingOriginal.preparedBy, editingOriginal.branchPhone, editingOriginal.branchEmail, editingOriginal.branchAddress].filter(Boolean).join('  •  ');
+      return;
+    }
+    const p = profiles.find(x => x.id === sel.value);
+    hint.innerText = p ? [p.preparedby, p.phone, p.email, p.address].filter(Boolean).join('  •  ') : '';
+  }
+
+  function getSelectedProfile() {
+    const sel = document.getElementById('q-profile');
+    return profiles.find(p => p.id === (sel ? sel.value : '')) || null;
+  }
+
+  function fillSettingsForm() {
+    document.getElementById('set-company').value = settings.company || '';
+    document.getElementById('set-website').value = settings.website || '';
+    document.getElementById('set-email').value = settings.email || '';
+    document.getElementById('set-address').value = settings.address || '';
+    document.getElementById('set-preparedby').value = settings.preparedby || '';
+    document.getElementById('set-adminpass').value = settings.adminPassword || '';
+    document.getElementById('set-phone').value = settings.phone || '';
+    document.getElementById('set-currency').value = settings.currency || '₱';
+    document.getElementById('set-bank').value = settings.bank || '';
+    document.getElementById('set-terms').value = settings.terms || '';
+
+    if (settings.logo) {
+      setCompanyLogoPreview(settings.logo);
+    } else {
+      clearCompanyLogo();
+    }
+  }
+
+  async function saveAppSettings() {
+    settings.company = document.getElementById('set-company').value.trim();
+    settings.website = document.getElementById('set-website').value.trim();
+    settings.email = document.getElementById('set-email').value.trim();
+    settings.address = document.getElementById('set-address').value.trim();
+    settings.preparedby = document.getElementById('set-preparedby').value.trim();
+    settings.adminPassword = document.getElementById('set-adminpass').value.trim() || 'admin123';
+    settings.phone = document.getElementById('set-phone').value.trim();
+    settings.currency = document.getElementById('set-currency').value.trim() || '₱';
+    settings.bank = document.getElementById('set-bank').value.trim();
+    settings.terms = document.getElementById('set-terms').value.trim();
+
+    // Upload Logo to Drive if base64
+    if (settings.logo && settings.logo.startsWith('data:image')) {
+      settings.logo = await uploadImageToDriveOrLocal(settings.logo, 'company_logo.png');
+    }
+
+    saveLocal('qt_settings', settings);
+    saveLocal('qt_profiles', profiles);
+    renderProfileDropdown();
+    updateCurrencyDisplay();
+
+    if (isCloudConnected) {
+      callGoogleApi('saveSettings', { settings: buildSettingsPayload() }, 'POST');
+    }
+
+    toast('Settings updated.', 'success');
+  }
+
+  function previewQuotation() {
+    const qObj = {
+      qNo: document.getElementById('q-no-display').value.trim() || 'QT-000',
+      customer: document.getElementById('q-customer').value || 'N/A',
+      project: document.getElementById('q-project').value || '',
+      address: document.getElementById('q-address').value || '',
+      valid: document.getElementById('q-valid').value || '7 DAYS',
+      date: document.getElementById('q-date').value || new Date().toISOString().slice(0,10),
+      items: currentQuotationItems,
+      deductions: currentDeductions.filter(d => (parseFloat(d.value) || 0) > 0),
+      wht: currentWht.enabled ? { ...currentWht } : null,
+      ...getPrepFields()
+    };
+    renderPrintableModal(qObj);
+  }
+
+  // Prepared-By info for a quotation: the creator's profile (live), else what was saved, else company defaults.
+  function getQuotationPrep(q) {
+    const oid = getOwnerId(q);
+    const p = oid ? profiles.find(x => x.id === oid) : null;
+    if (p) return { preparedBy: p.preparedby, address: p.address, email: p.email, phone: p.phone, terms: p.terms };
+    return {
+      preparedBy: q.preparedBy || settings.preparedby || '',
+      address: q.branchAddress || settings.address || '',
+      email: q.branchEmail || settings.email || '',
+      phone: q.branchPhone || settings.phone || '',
+      terms: undefined
+    };
+  }
+
+  function renderPrintableModal(q) {
+    const prepInfo = getQuotationPrep(q);
+    const area = document.getElementById('print-area');
+    const currency = settings.currency || '₱';
+
+    // Calculate Totals
+    let grandTotal = 0;
+    const itemsHtml = (q.items || []).map((item) => {
+      const unitNet = item.srp * (1 - (item.disc / 100));
+      const total = unitNet * item.qty;
+      grandTotal += total;
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 6px 4px; font-weight: 600; text-align: left; word-break: break-word;">
+            <div>${escapeHtml(item.sku)}</div>
+            ${item.spec ? `<div style="font-size: 9.5px; color: #64748b; font-weight: normal; white-space: pre-line; margin-top: 2px; line-height: 1.3;">${escapeHtml(item.spec)}</div>` : ''}
+          </td>
+          <td style="padding: 6px 4px; text-align: center;">
+            ${item.picture ? `<img src="${thumbUrl(item.picture, 320)}" style="width: 80px; height: 80px; object-fit: contain; background-color: #ffffff; border-radius: 4px; border: 1px solid #cbd5e1; display: inline-block;">` : '<span style="color:#94a3b8;">-</span>'}
+          </td>
+          <td style="padding: 6px 4px; text-align: center;">
+            <div>${item.qty}</div>
+            <div style="font-size: 9px; color: #64748b;">${escapeHtml(item.unit || 'pc/s')}</div>
+          </td>
+          <td style="padding: 6px 4px; text-align: right;">${formatMoney(item.srp)}</td>
+          <td style="padding: 6px 4px; text-align: center;">${item.disc ? item.disc + '%' : '-'}</td>
+          <td style="padding: 6px 4px; text-align: right;">${formatMoney(unitNet)}</td>
+          <td style="padding: 6px 4px; text-align: right; font-weight: bold;">${formatMoney(total)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Additional deductions (store credit, additional discount, etc.)
+    const dedList = (q.deductions || []).filter(d => (parseFloat(d.value) || 0) > 0);
+    let remaining = grandTotal;
+    const deductionRows = dedList.map(d => {
+      const amt = Math.min(deductionAmount(d, grandTotal), remaining);
+      remaining -= amt;
+      const pct = d.type === 'percent' ? ` (${parseFloat(d.value)}%)` : '';
+      return `<tr style="color: #047857;"><td colspan="4" style="padding: 2px 4px; text-align: right;">${escapeHtml(d.label || 'Deduction')}${pct}:</td><td colspan="3" style="white-space: nowrap; padding: 2px 4px; text-align: right; font-weight: 600;">-${formatMoney(amt)}</td></tr>`;
+    }).join('');
+    const finalTotal = Math.max(0, remaining);
+    const whtAmt = (q.wht && q.wht.enabled) ? whtAmount(q.wht, finalTotal) : 0;
+    const whtRows = whtAmt > 0 ? `
+            <tr style="border-top: 1px solid #cbd5e1; color: #047857;">
+              <td colspan="4" style="padding: 6px 4px 2px; text-align: right;">Less: Withholding Tax (BIR 2307) – ${escapeHtml(whtDescription(q.wht))}:</td>
+              <td colspan="3" style="white-space: nowrap; padding: 6px 4px 2px; text-align: right; font-weight: 600;">-${formatMoney(whtAmt)}</td>
+            </tr>
+            <tr>
+              <td colspan="4" style="padding: 4px 4px 8px; text-align: right; font-size: 12px; font-weight: bold;">NET AMOUNT PAYABLE:</td>
+              <td colspan="3" style="white-space: nowrap; padding: 4px 4px 8px; text-align: right; font-size: 14px; font-weight: 800; color: #047857;">${formatMoney(finalTotal - whtAmt)}</td>
+            </tr>` : '';
+
+    // Format Bank
+    const bankHtml = (settings.bank || '').split('\n\n').map(b => `
+      <div style="border: 1px solid #cbd5e1; padding: 6px 8px; border-radius: 6px; flex: 1; font-size: 9.5px; line-height: 1.35; background-color: #fafafa;">
+        ${escapeHtml(b).replace(/\n/g, '<br>')}
+      </div>
+    `).join('');
+
+    // Format Terms
+    const termsText = (prepInfo.terms !== undefined) ? prepInfo.terms : (settings.terms || '');
+    const termsHtml = termsText.split('\n').filter(t => t.trim()).map(t => `<div>• ${escapeHtml(t)}</div>`).join('');
+
+    area.innerHTML = `
+      <div style="box-sizing: border-box; width: 100%;">
+        <!-- Header -->
+        <div style="border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; max-width: 65%;">
+            ${settings.logo ? `<img src="${settings.logo}" style="max-height: 46px; max-width: 160px; object-fit: contain;">` : ''}
+            <div>
+              <div style="font-size: 15px; font-weight: bold; color: #0f172a; line-height: 1.2;">${escapeHtml(settings.company || 'COMPANY NAME')}</div>
+              <div style="font-size: 9.5px; color: #475569; margin-top: 2px;">${escapeHtml(prepInfo.address || settings.address || '')}</div>
+              <div style="font-size: 9.5px; color: #475569;">Email: ${escapeHtml(prepInfo.email || settings.email || '')} | Web: ${escapeHtml(settings.website || '')}</div>
+            </div>
+          </div>
+          <div style="text-align: right; shrink: 0;">
+            <h2 style="font-size: 20px; font-weight: 800; color: #047857; text-transform: uppercase; margin: 0; tracking: 0.5px;">QUOTATION</h2>
+            <div style="font-size: 10.5px; font-weight: bold; font-family: monospace; color: #1e293b; margin-top: 3px;">NO: ${q.qNo || 'QT-000'}</div>
+            <div style="font-size: 9.5px; color: #64748b;">Date: ${formatQDate(q.date)}</div>
+          </div>
+        </div>
+
+        <!-- Customer Meta Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-bottom: 12px; font-size: 10.5px; border: 1px solid #cbd5e1; padding: 8px 10px; border-radius: 6px; background-color: #f8fafc;">
+          <div><strong>CUSTOMER / COMPANY:</strong> ${escapeHtml(q.customer)}</div>
+          <div><strong>PROJECT:</strong> ${escapeHtml(q.project || 'N/A')}</div>
+          <div><strong>ADDRESS / ATTN:</strong> ${escapeHtml(q.address || 'N/A')}</div>
+          <div><strong>VALIDITY:</strong> ${escapeHtml(q.valid || '7 DAYS')}</div>
+        </div>
+
+        <!-- Items Table (100% Fixed Percentage Column Layout) -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10px; table-layout: fixed;">
+          <colgroup>
+            <col style="width: 29%;">
+            <col style="width: 16%;">
+            <col style="width: 7%;">
+            <col style="width: 13%;">
+            <col style="width: 9%;">
+            <col style="width: 13%;">
+            <col style="width: 13%;">
+          </colgroup>
+          <thead>
+            <tr style="background-color: #f1f5f9; border-top: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size: 9px; font-weight: bold;">
+              <th style="padding: 6px 4px; text-align: left;">ITEM & SPECIFICATION</th>
+              <th style="padding: 6px 4px; text-align: center;">PIC</th>
+              <th style="padding: 6px 4px; text-align: center;">QTY</th>
+              <th style="padding: 6px 4px; text-align: right;">SRP (${currency})</th>
+              <th style="padding: 6px 4px; text-align: center;">DISC</th>
+              <th style="padding: 6px 4px; text-align: right;">UNIT PRICE</th>
+              <th style="padding: 6px 4px; text-align: right;">AMOUNT (${currency})</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+
+        <!-- Totals (same column grid as the items table so amounts line up with the AMOUNT column) -->
+        <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background-color: #f1f5f9; margin-bottom: 12px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed;">
+          <colgroup>
+            <col style="width: 29%;">
+            <col style="width: 16%;">
+            <col style="width: 7%;">
+            <col style="width: 13%;">
+            <col style="width: 9%;">
+            <col style="width: 13%;">
+            <col style="width: 13%;">
+          </colgroup>
+          <tbody>
+            ${deductionRows ? `
+            <tr>
+              <td colspan="4" style="padding: 4px 4px 2px; text-align: right;">Subtotal:</td>
+              <td colspan="3" style="white-space: nowrap; padding: 4px 4px 2px; text-align: right; font-weight: 600;">${formatMoney(grandTotal)}</td>
+            </tr>
+            ${deductionRows}
+            ` : ''}
+            <tr style="${deductionRows ? 'border-top: 1px solid #cbd5e1;' : ''}">
+              <td colspan="4" style="padding: 8px 4px; text-align: right; font-size: 12px; font-weight: bold;">GRAND TOTAL:</td>
+              <td colspan="3" style="white-space: nowrap; padding: 8px 4px; text-align: right; font-size: 14px; font-weight: 800; color: #047857;">${formatMoney(finalTotal)}</td>
+            </tr>
+            ${whtRows}
+          </tbody>
+        </table>
+        </div>
+
+        <!-- Terms & Conditions -->
+        ${termsText.trim() ? `
+        <div style="margin-bottom: 12px; font-size: 9.5px; color: #475569; line-height: 1.45;">
+          <div style="font-weight: bold; color: #1e293b; margin-bottom: 3px;">TERMS & CONDITIONS:</div>
+          ${termsHtml}
+        </div>
+        ` : ''}
+
+        <!-- Payment & Bank Info -->
+        ${settings.bank ? `
+        <div style="margin-bottom: 18px;">
+          <div style="font-size: 10px; font-weight: bold; margin-bottom: 4px; color: #334155;">BANK PAYMENT DETAILS:</div>
+          <div style="display: flex; gap: 8px;">
+            ${bankHtml}
+          </div>
+        </div>
+        ` : ''}
+
+        <div style="margin-bottom: 18px; font-size: 9.5px; color: #475569; line-height: 1.45;">
+          Furthermore,if you need any clarifications and assistance, please do not hesitate to contact us at any time.
+        </div>
+
+        <!-- Signature Line -->
+        <div style="display: flex; justify-content: space-between; margin-top: 24px; font-size: 10.5px;">
+          <div>
+            <div style="font-weight: bold;">Cordially yours,</div>
+            <div style="border-top: 1px solid #334155; width: 190px; margin-top: 32px; padding-top: 4px; font-weight: 600;">
+              ${escapeHtml(prepInfo.preparedBy || 'Sales Representative')}
+            </div>
+            <div style="font-size: 9.5px; color: #64748b;">${escapeHtml(prepInfo.phone || '')}</div>
+          </div>
+          <div>
+            <div style="font-weight: bold;">Conforme:</div>
+            <div style="border-top: 1px solid #334155; width: 190px; margin-top: 32px; padding-top: 4px; font-size: 9.5px; color: #64748b;">
+              Printed Name & Signature / Date
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('print-modal').classList.remove('hidden');
+    initPreviewZoom();
+    document.getElementById('print-viewport').scrollTop = 0;
+    fitPreview();
+  }
+
+  // ---- Preview zoom: the page keeps its paper width (same layout as the PDF) and is scaled to fit ----
+  const PREVIEW_PAPER_W = 816;
+  const PREVIEW_MAX_SCALE = 3;
+  let previewScale = 1;
+  let previewFitScale = 1;
+  let previewZoomReady = false;
+
+  function updatePreviewLayout() {
+    const area = document.getElementById('print-area');
+    const scaler = document.getElementById('print-scaler');
+    if (!area || !scaler) return;
+    area.style.transform = `scale(${previewScale})`;
+    scaler.style.width = (PREVIEW_PAPER_W * previewScale) + 'px';
+    scaler.style.height = (area.offsetHeight * previewScale) + 'px';
+    const label = document.getElementById('zoom-label');
+    if (label) label.innerText = Math.abs(previewScale - previewFitScale) < 0.01 ? 'Fit' : Math.round(previewScale / previewFitScale * 100) + '%';
+  }
+
+  function setPreviewScale(newScale, cx, cy) {
+    const vp = document.getElementById('print-viewport');
+    if (!vp) return;
+    newScale = Math.max(previewFitScale, Math.min(PREVIEW_MAX_SCALE, newScale));
+    if (cx === undefined) { cx = vp.clientWidth / 2; cy = vp.clientHeight / 2; }
+    const old = previewScale;
+    const contentX = (vp.scrollLeft + cx) / old;
+    const contentY = (vp.scrollTop + cy) / old;
+    previewScale = newScale;
+    updatePreviewLayout();
+    vp.scrollLeft = Math.max(0, contentX * newScale - cx);
+    vp.scrollTop = Math.max(0, contentY * newScale - cy);
+  }
+
+  function fitPreview() {
+    const vp = document.getElementById('print-viewport');
+    if (!vp || !vp.clientWidth) return;
+    previewFitScale = Math.min(1, (vp.clientWidth - 16) / PREVIEW_PAPER_W);
+    previewScale = previewFitScale;
+    updatePreviewLayout();
+    vp.scrollLeft = 0;
+  }
+
+  function zoomPreview(factor) { setPreviewScale(previewScale * factor); }
+
+  function initPreviewZoom() {
+    if (previewZoomReady) return;
+    previewZoomReady = true;
+    const vp = document.getElementById('print-viewport');
+    const area = document.getElementById('print-area');
+
+    // Keep the page height in sync when images finish loading
+    if (window.ResizeObserver) new ResizeObserver(() => updatePreviewLayout()).observe(area);
+
+    // Re-fit on rotate / resize (unless the user has zoomed in)
+    window.addEventListener('resize', () => {
+      if (document.getElementById('print-modal').classList.contains('hidden')) return;
+      const wasFit = Math.abs(previewScale - previewFitScale) < 0.01;
+      const newFit = Math.min(1, (vp.clientWidth - 16) / PREVIEW_PAPER_W);
+      previewFitScale = newFit;
+      if (wasFit) previewScale = newFit;
+      setPreviewScale(previewScale);
+    });
+
+    // Two-finger pinch zoom
+    let pinch = null;
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    vp.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) pinch = { d: dist(e.touches), s: previewScale };
+    }, { passive: true });
+    vp.addEventListener('touchmove', e => {
+      if (!pinch || e.touches.length !== 2) return;
+      if (e.cancelable) e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+      setPreviewScale(pinch.s * dist(e.touches) / pinch.d, cx, cy);
+    }, { passive: false });
+    vp.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; }, { passive: true });
+    vp.addEventListener('touchcancel', () => { pinch = null; }, { passive: true });
+
+    // Ctrl + mouse wheel zoom on desktop
+    vp.addEventListener('wheel', e => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      setPreviewScale(previewScale * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+  }
+
+  function closePreviewModal() {
+    document.getElementById('print-modal').classList.add('hidden');
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ===== Date helpers: Google Sheets may return full ISO timestamps (e.g. 2026-10-06T16:00:00.000Z) =====
+  function parseQDate(v) {
+    if (!v) return null;
+    const str = String(v).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+    const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str); // plain dates stay local; timestamps convert to local time
+    return isNaN(d) ? null : d;
+  }
+  function formatQDate(v) {
+    const d = parseQDate(v);
+    return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (v || '');
+  }
+  function toInputDate(v) {
+    const d = parseQDate(v);
+    if (!d) return '';
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // ===== Custom dialogs & toasts =====
+  const UI_ICONS = {
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>',
+    lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+    eraser: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4-4a2 2 0 0 1 0-3L14 3a2 2 0 0 1 3 0l4 4a2 2 0 0 1 0 3L11 21M7 21h13"/></svg>'
+  };
+  function uiEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // Core dialog: resolves true/false (confirm/alert) or string/null (prompt)
+  function uiDialog(o) {
+    return new Promise(resolve => {
+      let root = document.getElementById('ui-dialog-root');
+      if (!root) { root = document.createElement('div'); root.id = 'ui-dialog-root'; document.body.appendChild(root); }
+      const prevFocus = document.activeElement;
+      const tone = o.tone || 'brand';
+      const isPrompt = !!o.input;
+      root.innerHTML = `
+        <div class="ui-card ui-tone-${tone}" role="${o.alertOnly ? 'alertdialog' : 'dialog'}" aria-modal="true" aria-labelledby="ui-t" aria-describedby="ui-m">
+          <div class="ui-head">
+            <div class="ui-icon">${UI_ICONS[o.icon] || UI_ICONS.info}</div>
+            <div style="min-width:0;flex:1">
+              <div class="ui-title" id="ui-t">${uiEsc(o.title)}</div>
+              <div class="ui-msg" id="ui-m">${uiEsc(o.message)}</div>
+            </div>
+          </div>
+          ${isPrompt ? `<input class="ui-input" id="ui-in" type="${o.input}" placeholder="${uiEsc(o.placeholder || '')}" autocomplete="off">` : ''}
+          <div class="ui-actions">
+            ${o.alertOnly ? '' : `<button type="button" class="ui-btn ui-btn-ghost" id="ui-cancel">${uiEsc(o.cancelText || 'Cancel')}</button>`}
+            <button type="button" class="ui-btn ui-btn-ok" id="ui-ok">${uiEsc(o.confirmText || 'OK')}</button>
+          </div>
+        </div>`;
+      root.classList.add('open');
+      const okBtn = root.querySelector('#ui-ok'), cancelBtn = root.querySelector('#ui-cancel'), input = root.querySelector('#ui-in');
+      const finish = (ok) => {
+        root.classList.remove('open'); root.innerHTML = '';
+        document.removeEventListener('keydown', onKey, true);
+        if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) {} }
+        resolve(isPrompt ? (ok ? input.value : null) : ok);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+        else if (e.key === 'Enter' && document.activeElement !== cancelBtn) { e.preventDefault(); finish(true); }
+        else if (e.key === 'Tab') {
+          const f = [...root.querySelectorAll('input,button')]; if (!f.length) return;
+          const first = f[0], last = f[f.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      };
+      document.addEventListener('keydown', onKey, true);
+      okBtn.onclick = () => finish(true);
+      if (cancelBtn) cancelBtn.onclick = () => finish(false);
+      root.onmousedown = (e) => { if (e.target === root) finish(false); };
+      // Destructive actions focus Cancel first so Enter can't delete by accident
+      (input || (tone === 'danger' && cancelBtn) || okBtn).focus();
+    });
+  }
+  function uiConfirm(message, o = {}) {
+    return uiDialog({ title: 'Are you sure?', tone: 'warning', icon: 'warn', confirmText: 'Confirm', ...o, message });
+  }
+  function uiAlert(message, o = {}) {
+    return uiDialog({ title: 'Notice', tone: 'warning', icon: 'warn', alertOnly: true, ...o, message });
+  }
+  function uiPrompt(message, o = {}) {
+    return uiDialog({ title: 'Enter value', tone: 'brand', icon: 'lock', input: 'text', confirmText: 'Continue', ...o, message });
+  }
+
+  function toast(message, type = 'success', opts = {}) {
+    let box = document.getElementById('ui-toasts');
+    if (!box) { box = document.createElement('div'); box.id = 'ui-toasts'; box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
+    const icon = { success: 'check', error: 'error', warning: 'warn', info: 'info' }[type] || 'info';
+    const dur = opts.duration || (type === 'error' ? 6000 : 3500);
+    const el = document.createElement('div');
+    el.className = 'ui-toast ' + type;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.style.setProperty('--dur', dur + 'ms');
+    el.innerHTML = `<span class="ui-ticon">${UI_ICONS[icon]}</span>
+      <div class="ui-ttext">${opts.title ? `<div class="ui-ttitle">${uiEsc(opts.title)}</div>` : ''}${uiEsc(message)}</div>
+      <button type="button" class="ui-tclose" aria-label="Dismiss">&times;</button><span class="ui-bar"></span>`;
+    const close = () => { if (el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 180); };
+    el.querySelector('.ui-tclose').onclick = close;
+    box.appendChild(el);
+    while (box.children.length > 4) box.firstChild.remove();
+    let t = setTimeout(close, dur);
+    el.onmouseenter = () => clearTimeout(t);
+    el.onmouseleave = () => { t = setTimeout(close, 1500); };
+  }
+  </script>
+</body>
+</html>
